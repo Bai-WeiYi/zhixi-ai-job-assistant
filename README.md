@@ -2,6 +2,15 @@
 
 职析是一个面向 AI 应用工程岗位的全栈作品。用户注册登录后，可以输入简历和职位描述，调用 DeepSeek 生成岗位匹配分析、简历建议和 8 道个性化面试题；还可以逐题作答，获得 AI 评分并对比多次练习结果。
 
+## 在线体验
+
+- 前端：https://zhixi-ai-job-assistant.vercel.app
+- 后端健康检查：https://zhixi-api-tns3.onrender.com/api/health
+- API 文档：https://zhixi-api-tns3.onrender.com/docs
+- GitHub：https://github.com/Bai-WeiYi/zhixi-ai-job-assistant
+
+Render 免费实例闲置后会休眠，首次打开可能需要约一分钟唤醒。
+
 ## 项目亮点
 
 - 使用 FastAPI 和 Pydantic 同时校验用户输入与大模型结构化输出。
