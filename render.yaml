@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: zhixi-api
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m alembic upgrade head && python -m app.demo_seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: DATABASE_URL
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.deepseek.com
+      - key: LLM_MODEL
+        value: deepseek-chat
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: PORTFOLIO_USER_EMAIL
+        sync: false
+      - key: PORTFOLIO_USER_PASSWORD
+        sync: false
+      - key: USER_DAILY_ANALYSIS_LIMIT
+        value: "3"
+      - key: USER_DAILY_INTERVIEW_LIMIT
+        value: "10"
+      - key: GLOBAL_DAILY_ANALYSIS_LIMIT
+        value: "30"
+      - key: GLOBAL_DAILY_INTERVIEW_LIMIT
+        value: "100"
