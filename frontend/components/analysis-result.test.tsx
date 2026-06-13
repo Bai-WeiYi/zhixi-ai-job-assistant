@@ -70,6 +70,7 @@ describe("AnalysisResultView", () => {
       prompt_tokens: 10,
       completion_tokens: 20,
       total_tokens: 30,
+      references: [],
       created_at: "2026-06-11T00:00:00Z",
     });
     render(<AnalysisResultView analysis={analysis} />);

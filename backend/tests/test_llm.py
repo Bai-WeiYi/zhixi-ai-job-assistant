@@ -48,9 +48,11 @@ class FakeCompletions:
     def __init__(self, contents):
         self.contents = iter(contents)
         self.calls = 0
+        self.last_kwargs = None
 
     async def create(self, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         content = next(self.contents)
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
@@ -109,6 +111,34 @@ async def test_invalid_feedback_retries_once():
     )
     assert result.feedback.score == 88
     assert completions.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_feedback_prompt_includes_rag_references():
+    from app.schemas import KnowledgeReference
+
+    service = LLMService(Settings(deepseek_api_key="test"))
+    completions = FakeCompletions([valid_feedback_json()])
+    service.client.chat.completions = completions
+
+    await service.evaluate_interview_answer(
+        "简历" * 30,
+        "职位" * 30,
+        sample_question(),
+        "我会说明背景、方案取舍和最终结果。",
+        references=[
+            KnowledgeReference(
+                document_id=1,
+                title="公司后端面试标准",
+                content="回答必须说明安全性、异常处理和量化结果。",
+                similarity=0.88,
+            )
+        ],
+    )
+
+    prompt = completions.last_kwargs["messages"][1]["content"]
+    assert "公司后端面试标准" in prompt
+    assert "不得虚构资料中不存在的公司要求" in prompt
 
 
 @pytest.mark.asyncio

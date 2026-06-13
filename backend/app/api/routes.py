@@ -2,15 +2,30 @@ import json
 import math
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
-from sqlalchemy import select, text, update
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.models import Analysis, InterviewAttempt, User
+from app.models import (
+    Analysis,
+    InterviewAttempt,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    User,
+)
 from app.schemas import (
     AnalysisCreate,
     AnalysisListItem,
@@ -21,17 +36,27 @@ from app.schemas import (
     InterviewAttemptCreate,
     InterviewAttemptResponse,
     InterviewFeedback,
+    KnowledgeDocumentResponse,
+    KnowledgeReference,
     ParsedResume,
     UsageSummary,
     UserCredentials,
     UserResponse,
 )
 from app.services.auth import create_access_token, hash_password, verify_password
+from app.services.knowledge import (
+    KnowledgeServiceError,
+    chunk_text,
+    parse_knowledge_input,
+    retrieve_references,
+    serialize_vector,
+)
 from app.services.llm import LLMAnalysis, LLMInterviewEvaluation, LLMServiceError
 from app.services.pdf_parser import parse_resume_pdf
 from app.services.usage import (
     ANALYSIS_OPERATION,
     INTERVIEW_OPERATION,
+    KNOWLEDGE_OPERATION,
     UsageLimitExceeded,
     build_usage_summary,
     claim_usage,
@@ -79,6 +104,14 @@ def build_response(record: Analysis) -> AnalysisResponse:
 
 
 def build_attempt_response(record: InterviewAttempt) -> InterviewAttemptResponse:
+    references = (
+        [
+            KnowledgeReference.model_validate(item)
+            for item in json.loads(record.rag_context_json)
+        ]
+        if record.rag_context_json
+        else []
+    )
     return InterviewAttemptResponse(
         id=record.id,
         analysis_id=record.analysis_id,
@@ -91,6 +124,19 @@ def build_attempt_response(record: InterviewAttempt) -> InterviewAttemptResponse
         prompt_tokens=record.prompt_tokens,
         completion_tokens=record.completion_tokens,
         total_tokens=record.total_tokens,
+        references=references,
+        created_at=record.created_at,
+    )
+
+
+def build_knowledge_response(record: KnowledgeDocument) -> KnowledgeDocumentResponse:
+    return KnowledgeDocumentResponse(
+        id=record.id,
+        title=record.title,
+        source_type=record.source_type,
+        filename=record.filename,
+        character_count=record.character_count,
+        chunk_count=record.chunk_count,
         created_at=record.created_at,
     )
 
@@ -176,6 +222,136 @@ async def parse_resume(
 ) -> ParsedResume:
     del current_user
     return await parse_resume_pdf(file, settings.max_pdf_size_mb)
+
+
+@router.post(
+    "/knowledge/documents",
+    response_model=KnowledgeDocumentResponse,
+    status_code=201,
+)
+async def create_knowledge_document(
+    request: Request,
+    title: str = Form(..., min_length=1, max_length=200),
+    text_content: str | None = Form(None, alias="text"),
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> KnowledgeDocumentResponse:
+    """解析资料、生成向量并在一次数据库事务中保存。"""
+    normalized_title = title.strip()
+    if not normalized_title:
+        raise HTTPException(status_code=422, detail="资料标题不能为空")
+
+    document_count = db.scalar(
+        select(func.count(KnowledgeDocument.id)).where(
+            KnowledgeDocument.user_id == current_user.id
+        )
+    ) or 0
+    if document_count >= settings.knowledge_max_documents:
+        raise HTTPException(
+            status_code=422,
+            detail=f"每位用户最多保存 {settings.knowledge_max_documents} 份知识资料",
+        )
+
+    file_content = await file.read() if file is not None else None
+    try:
+        parsed = parse_knowledge_input(
+            text_content,
+            file_content,
+            file.filename if file else None,
+            file.content_type if file else None,
+            settings,
+        )
+        chunks = chunk_text(parsed.text)
+        if not chunks:
+            raise KnowledgeServiceError("知识资料无法切分为有效片段")
+    except KnowledgeServiceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        usage_event = claim_usage(
+            db,
+            current_user.id,
+            KNOWLEDGE_OPERATION,
+            settings,
+        )
+    except UsageLimitExceeded as exc:
+        raise_usage_limit(exc)
+
+    try:
+        vectors = await request.app.state.embedding_service.embed(chunks)
+    except KnowledgeServiceError as exc:
+        finish_usage(db, usage_event, "failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    try:
+        document = KnowledgeDocument(
+            user_id=current_user.id,
+            title=normalized_title,
+            source_type=parsed.source_type,
+            filename=parsed.filename,
+            character_count=len(parsed.text),
+            chunk_count=len(chunks),
+        )
+        db.add(document)
+        db.flush()
+        db.add_all(
+            [
+                KnowledgeChunk(
+                    document_id=document.id,
+                    user_id=current_user.id,
+                    chunk_index=index,
+                    content=content,
+                    embedding=serialize_vector(vector),
+                )
+                for index, (content, vector) in enumerate(zip(chunks, vectors, strict=True))
+            ]
+        )
+        db.commit()
+        db.refresh(document)
+    except Exception:
+        db.rollback()
+        finish_usage(db, usage_event, "failed")
+        raise
+
+    finish_usage(db, usage_event, "succeeded")
+    return build_knowledge_response(document)
+
+
+@router.get(
+    "/knowledge/documents",
+    response_model=list[KnowledgeDocumentResponse],
+)
+def list_knowledge_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[KnowledgeDocumentResponse]:
+    records = db.scalars(
+        select(KnowledgeDocument)
+        .where(KnowledgeDocument.user_id == current_user.id)
+        .order_by(KnowledgeDocument.created_at.desc(), KnowledgeDocument.id.desc())
+    ).all()
+    return [build_knowledge_response(record) for record in records]
+
+
+@router.delete("/knowledge/documents/{document_id}", status_code=204)
+def delete_knowledge_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    record = db.scalar(
+        select(KnowledgeDocument).where(
+            KnowledgeDocument.id == document_id,
+            KnowledgeDocument.user_id == current_user.id,
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="知识资料不存在")
+    db.delete(record)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/analyses", response_model=AnalysisResponse, status_code=201)
@@ -290,6 +466,31 @@ async def create_interview_attempt(
     except UsageLimitExceeded as exc:
         raise_usage_limit(exc)
 
+    references: list[KnowledgeReference] = []
+    has_knowledge = (
+        db.scalar(
+            select(func.count(KnowledgeChunk.id)).where(
+                KnowledgeChunk.user_id == current_user.id
+            )
+        )
+        or 0
+    ) > 0
+    if has_knowledge:
+        try:
+            query_text = f"{question.question}\n考察目的：{question.purpose}"
+            query_vector = (
+                await request.app.state.embedding_service.embed([query_text])
+            )[0]
+            references = retrieve_references(
+                db,
+                current_user.id,
+                query_vector,
+                settings,
+            )
+        except KnowledgeServiceError:
+            # RAG 是增强能力，向量服务临时不可用时仍保留原评分流程。
+            references = []
+
     try:
         evaluation: LLMInterviewEvaluation = (
             await request.app.state.llm_service.evaluate_interview_answer(
@@ -297,6 +498,7 @@ async def create_interview_attempt(
                 record.job_description,
                 question,
                 payload.answer_text,
+                references=references,
             )
         )
     except LLMServiceError as exc:
@@ -314,6 +516,14 @@ async def create_interview_attempt(
         completion_tokens=evaluation.completion_tokens,
         total_tokens=evaluation.total_tokens,
         duration_ms=evaluation.duration_ms,
+        rag_context_json=(
+            json.dumps(
+                [item.model_dump() for item in references],
+                ensure_ascii=False,
+            )
+            if references
+            else None
+        ),
     )
     db.add(attempt)
     db.commit()

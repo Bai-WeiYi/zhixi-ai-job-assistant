@@ -20,6 +20,14 @@ services:
         value: https://api.deepseek.com
       - key: LLM_MODEL
         value: deepseek-chat
+      - key: EMBEDDING_API_KEY
+        sync: false
+      - key: EMBEDDING_BASE_URL
+        value: https://api.siliconflow.cn/v1
+      - key: EMBEDDING_MODEL
+        value: BAAI/bge-m3
+      - key: EMBEDDING_DIMENSIONS
+        value: "1024"
       - key: FRONTEND_ORIGIN
         sync: false
       - key: JWT_SECRET_KEY
@@ -38,3 +46,7 @@ services:
         value: "30"
       - key: GLOBAL_DAILY_INTERVIEW_LIMIT
         value: "100"
+      - key: USER_DAILY_KNOWLEDGE_LIMIT
+        value: "5"
+      - key: GLOBAL_DAILY_KNOWLEDGE_LIMIT
+        value: "50"

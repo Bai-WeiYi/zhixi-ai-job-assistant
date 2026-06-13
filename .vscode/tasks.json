@@ -26,8 +26,9 @@
     },
     {
       "label": "启动前端",
-      "type": "shell",
-      "command": "npm run dev",
+      "type": "process",
+      "command": "npm.cmd",
+      "args": ["run", "dev"],
       "options": {
         "cwd": "${workspaceFolder}\\frontend"
       },

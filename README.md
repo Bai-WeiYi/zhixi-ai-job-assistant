@@ -25,13 +25,14 @@ Render 免费实例闲置后会休眠，首次打开可能需要约一分钟唤�
 - 提供不调用 DeepSeek 的演示数据，现场网络异常时仍能展示完整产品。
 - 通过用户级和全站级每日限额控制公开部署后的模型调用成本。
 - 支持 Vercel、Render 和 Neon 的免费作品集部署方案。
+- 支持个人 RAG 面试知识库：上传 PDF 或文本，检索相关标准后再由 DeepSeek 评分。
 
 ## 技术栈
 
 | 层级 | 技术 |
 |---|---|
 | 后端 | Python、FastAPI、Pydantic |
-| AI | DeepSeek API、OpenAI 兼容客户端 |
+| AI | DeepSeek API、硅基流动 BGE-M3 Embedding、RAG |
 | 数据库 | SQLAlchemy、SQLite、PostgreSQL、Alembic |
 | 鉴权 | JWT、Argon2、Bearer Token |
 | 前端 | Next.js 15、React 19、TypeScript |
@@ -85,6 +86,12 @@ USER_DAILY_ANALYSIS_LIMIT=3
 USER_DAILY_INTERVIEW_LIMIT=10
 GLOBAL_DAILY_ANALYSIS_LIMIT=30
 GLOBAL_DAILY_INTERVIEW_LIMIT=100
+EMBEDDING_API_KEY=你的硅基流动Key
+EMBEDDING_BASE_URL=https://api.siliconflow.cn/v1
+EMBEDDING_MODEL=BAAI/bge-m3
+EMBEDDING_DIMENSIONS=1024
+USER_DAILY_KNOWLEDGE_LIMIT=5
+GLOBAL_DAILY_KNOWLEDGE_LIMIT=50
 ```
 
 默认 SQLite 可以直接运行。准备 PostgreSQL 后，将 `DATABASE_URL` 改为：
@@ -196,6 +203,26 @@ React 从 localStorage 读取 JWT
 → React 更新最新分数和历次成绩
 ```
 
+### RAG 知识库与评分
+
+```text
+用户上传 PDF 或粘贴资料
+→ FastAPI 提取并校验文本
+→ 按段落切成约 600 字片段
+→ 硅基流动 BGE-M3 将片段转换为 1024 维向量
+→ Neon PostgreSQL + pgvector 保存片段和向量
+→ 用户提交面试回答
+→ 将题目转换为查询向量
+→ 只检索当前用户最相关的 4 个片段
+→ 参考片段 + 题目 + 回答交给 DeepSeek 评分
+→ 保存评分及引用快照，删除原资料后历史引用仍可查看
+```
+
+RAG 不会替代 DeepSeek：Embedding 负责“找到相关资料”，DeepSeek 负责“阅读资料并评分”。
+如果没有知识资料、相关度不足或检索服务暂时失败，系统会自动回到原来的评分流程。
+Neon 支持 `pgvector` 时使用数据库余弦检索；本地 PostgreSQL 未安装扩展或使用 SQLite
+时会自动用文本保存向量并由 Python 计算相似度。
+
 ## 主要 API
 
 | 方法 | 地址 | 用途 |
@@ -205,6 +232,9 @@ React 从 localStorage 读取 JWT
 | `POST` | `/api/auth/login` | 登录并返回 JWT |
 | `GET` | `/api/auth/me` | 读取当前登录用户 |
 | `GET` | `/api/usage` | 查询今日个人 AI 剩余额度 |
+| `POST` | `/api/knowledge/documents` | 上传文本或 PDF 并生成知识向量 |
+| `GET` | `/api/knowledge/documents` | 查询当前用户的知识资料 |
+| `DELETE` | `/api/knowledge/documents/{id}` | 删除自己的知识资料及片段 |
 | `POST` | `/api/resumes/parse` | 提取 PDF 文本 |
 | `POST` | `/api/analyses` | 创建岗位分析 |
 | `GET` | `/api/analyses` | 查询历史记录 |
@@ -251,6 +281,7 @@ GitHub
 ```text
 DATABASE_URL              Neon pooled connection string
 DEEPSEEK_API_KEY           DeepSeek Key
+EMBEDDING_API_KEY          硅基流动 Key，用于 BGE-M3 向量化
 FRONTEND_ORIGIN            Vercel 正式域名，首次可先填占位地址
 PORTFOLIO_USER_EMAIL       仅你本人使用的演示登录邮箱
 PORTFOLIO_USER_PASSWORD    演示账号私有密码

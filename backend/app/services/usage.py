@@ -12,7 +12,8 @@ from app.schemas import UsageQuota, UsageSummary
 
 ANALYSIS_OPERATION = "analysis"
 INTERVIEW_OPERATION = "interview"
-VALID_OPERATIONS = {ANALYSIS_OPERATION, INTERVIEW_OPERATION}
+KNOWLEDGE_OPERATION = "knowledge"
+VALID_OPERATIONS = {ANALYSIS_OPERATION, INTERVIEW_OPERATION, KNOWLEDGE_OPERATION}
 
 
 @dataclass
@@ -38,6 +39,8 @@ def operation_limits(operation: str, settings: Settings) -> tuple[int, int]:
         return settings.user_daily_analysis_limit, settings.global_daily_analysis_limit
     if operation == INTERVIEW_OPERATION:
         return settings.user_daily_interview_limit, settings.global_daily_interview_limit
+    if operation == KNOWLEDGE_OPERATION:
+        return settings.user_daily_knowledge_limit, settings.global_daily_knowledge_limit
     raise ValueError(f"未知 AI 操作：{operation}")
 
 
@@ -69,7 +72,12 @@ def claim_usage(
 
     if db.bind is not None and db.bind.dialect.name == "postgresql":
         # 同一操作共用事务锁，使“计数 + 新增”在并发请求下保持原子性。
-        lock_key = 71001 if operation == ANALYSIS_OPERATION else 71002
+        lock_keys = {
+            ANALYSIS_OPERATION: 71001,
+            INTERVIEW_OPERATION: 71002,
+            KNOWLEDGE_OPERATION: 71003,
+        }
+        lock_key = lock_keys[operation]
         db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
 
     user_used = count_usage(db, operation, start_at, user_id)
@@ -112,4 +120,5 @@ def build_usage_summary(
     return UsageSummary(
         analysis=quota(ANALYSIS_OPERATION),
         interview=quota(INTERVIEW_OPERATION),
+        knowledge=quota(KNOWLEDGE_OPERATION),
     )

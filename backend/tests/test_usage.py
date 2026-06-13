@@ -7,6 +7,7 @@ from app.models import AIUsageEvent, User
 from app.services.usage import (
     ANALYSIS_OPERATION,
     INTERVIEW_OPERATION,
+    KNOWLEDGE_OPERATION,
     UsageLimitExceeded,
     build_usage_summary,
     claim_usage,
@@ -42,6 +43,16 @@ def test_claim_and_finish_usage(db_session):
     assert summary.analysis.used == 1
     assert summary.analysis.remaining == 2
     assert event.status == "succeeded"
+    assert summary.knowledge.remaining == 5
+
+
+def test_knowledge_usage_limit(db_session):
+    user = add_user(db_session, "knowledge-usage@example.com")
+    limits = settings(user_daily_knowledge_limit=1, global_daily_knowledge_limit=5)
+
+    claim_usage(db_session, user.id, KNOWLEDGE_OPERATION, limits)
+    with pytest.raises(UsageLimitExceeded):
+        claim_usage(db_session, user.id, KNOWLEDGE_OPERATION, limits)
 
 
 def test_global_limit_applies_across_users(db_session):

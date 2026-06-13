@@ -24,6 +24,7 @@ export function Header() {
         <nav aria-label="主导航">
           <Link href="/">新建分析</Link>
           <Link href="/history">历史记录</Link>
+          <Link href="/knowledge">知识库</Link>
           <span className="header-user" title={user.email}>
             {user.email}
           </span>

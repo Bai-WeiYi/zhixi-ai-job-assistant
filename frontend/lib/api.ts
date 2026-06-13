@@ -3,6 +3,7 @@ import type {
   AnalysisResponse,
   AuthResponse,
   InterviewAttempt,
+  KnowledgeDocument,
   ParsedResume,
   UsageSummary,
   User,
@@ -37,10 +38,14 @@ export function clearAccessToken() {
   }
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  options?: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
   const token = getAccessToken();
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
@@ -100,7 +105,8 @@ export function loginUser(email: string, password: string) {
 }
 
 export function getCurrentUser() {
-  return request<User>("/api/auth/me");
+  // 登录状态检查应快速失败，避免后端未启动时长时间停留在加载页。
+  return request<User>("/api/auth/me", undefined, 10_000);
 }
 
 export function getUsage() {
@@ -154,4 +160,30 @@ export function createInterviewAttempt(
 
 export function deleteAnalysis(id: number) {
   return request<void>(`/api/analyses/${id}`, { method: "DELETE" });
+}
+
+export function createKnowledgeDocument(
+  title: string,
+  text: string,
+  file: File | null,
+) {
+  const formData = new FormData();
+  formData.append("title", title);
+  if (file) {
+    formData.append("file", file);
+  } else {
+    formData.append("text", text);
+  }
+  return request<KnowledgeDocument>("/api/knowledge/documents", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function listKnowledgeDocuments() {
+  return request<KnowledgeDocument[]>("/api/knowledge/documents");
+}
+
+export function deleteKnowledgeDocument(id: number) {
+  return request<void>(`/api/knowledge/documents/${id}`, { method: "DELETE" });
 }

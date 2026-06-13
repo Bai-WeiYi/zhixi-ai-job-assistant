@@ -51,6 +51,13 @@ class InterviewFeedback(BaseModel):
     suggested_answer_points: list[str] = Field(min_length=2, max_length=8)
 
 
+class KnowledgeReference(BaseModel):
+    document_id: int
+    title: str
+    content: str
+    similarity: float = Field(ge=-1, le=1)
+
+
 class AnalysisCreate(BaseModel):
     resume_text: str = Field(min_length=30, max_length=30000)
     job_description: str = Field(min_length=30, max_length=15000)
@@ -85,6 +92,7 @@ class InterviewAttemptResponse(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    references: list[KnowledgeReference] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -129,3 +137,14 @@ class UsageQuota(BaseModel):
 class UsageSummary(BaseModel):
     analysis: UsageQuota
     interview: UsageQuota
+    knowledge: UsageQuota
+
+
+class KnowledgeDocumentResponse(BaseModel):
+    id: int
+    title: str
+    source_type: str
+    filename: str | None = None
+    character_count: int
+    chunk_count: int
+    created_at: datetime

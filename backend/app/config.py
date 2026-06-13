@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     user_daily_interview_limit: int = 10
     global_daily_analysis_limit: int = 30
     global_daily_interview_limit: int = 100
+    embedding_api_key: str = ""
+    embedding_base_url: str = "https://api.siliconflow.cn/v1"
+    embedding_model: str = "BAAI/bge-m3"
+    embedding_dimensions: int = 1024
+    knowledge_max_documents: int = 10
+    knowledge_max_characters: int = 50000
+    knowledge_top_k: int = 4
+    knowledge_min_similarity: float = 0.35
+    user_daily_knowledge_limit: int = 5
+    global_daily_knowledge_limit: int = 50
     portfolio_user_email: str = ""
     portfolio_user_password: str = ""
 

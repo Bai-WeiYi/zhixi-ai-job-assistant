@@ -6,7 +6,12 @@ from openai import APIConnectionError, APITimeoutError, AsyncOpenAI
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.schemas import AnalysisResult, InterviewFeedback, InterviewQuestion
+from app.schemas import (
+    AnalysisResult,
+    InterviewFeedback,
+    InterviewQuestion,
+    KnowledgeReference,
+)
 
 
 class LLMServiceError(RuntimeError):
@@ -129,10 +134,24 @@ class LLMService:
         job_description: str,
         question: InterviewQuestion,
         answer_text: str,
+        references: list[KnowledgeReference] | None = None,
     ) -> LLMInterviewEvaluation:
         """评价单道面试回答，并保证模型输出符合固定结构。"""
         if not self.settings.deepseek_api_key:
             raise LLMServiceError("尚未配置 DEEPSEEK_API_KEY")
+
+        reference_context = ""
+        if references:
+            formatted = "\n\n".join(
+                f"资料《{item.title}》（相关度 {item.similarity:.2f}）：\n{item.content}"
+                for item in references
+            )
+            reference_context = (
+                "\n\n以下是从用户知识库检索到的参考资料。"
+                "请优先依据资料评价；资料未覆盖的部分再结合题目参考要点。"
+                "不得虚构资料中不存在的公司要求：\n"
+                f"{formatted}"
+            )
 
         user_prompt = (
             f"候选人简历：\n{resume_text}\n\n"
@@ -141,6 +160,7 @@ class LLMService:
             f"考察目的：{question.purpose}\n"
             f"参考要点：{'；'.join(question.answer_points)}\n\n"
             f"候选人回答：\n{answer_text}"
+            f"{reference_context}"
         )
         started_at = time.perf_counter()
         last_error: Exception | None = None

@@ -261,6 +261,20 @@ export function InterviewPractice({ analysis }: Props) {
               title="参考回答要点"
               items={latestAttempt.feedback.suggested_answer_points}
             />
+            {(latestAttempt.references ?? []).length > 0 ? (
+              <div className="rag-references">
+                <h4>本次评分参考资料</h4>
+                {(latestAttempt.references ?? []).map((reference, index) => (
+                  <article key={`${reference.document_id}-${index}`}>
+                    <div>
+                      <strong>{reference.title}</strong>
+                      <span>相关度 {Math.round(reference.similarity * 100)}%</span>
+                    </div>
+                    <p>{reference.content}</p>
+                  </article>
+                ))}
+              </div>
+            ) : null}
             {currentAttempts.length > 1 ? (
               <div className="attempt-history">
                 <h4>

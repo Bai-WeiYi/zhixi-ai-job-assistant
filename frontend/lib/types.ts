@@ -32,6 +32,13 @@ export type InterviewFeedback = {
   suggested_answer_points: string[];
 };
 
+export type KnowledgeReference = {
+  document_id: number;
+  title: string;
+  content: string;
+  similarity: number;
+};
+
 export type InterviewAttempt = {
   id: number;
   analysis_id: number;
@@ -44,6 +51,7 @@ export type InterviewAttempt = {
   prompt_tokens: number | null;
   completion_tokens: number | null;
   total_tokens: number | null;
+  references: KnowledgeReference[];
   created_at: string;
 };
 
@@ -84,4 +92,15 @@ export type UsageQuota = {
 export type UsageSummary = {
   analysis: UsageQuota;
   interview: UsageQuota;
+  knowledge: UsageQuota;
+};
+
+export type KnowledgeDocument = {
+  id: number;
+  title: string;
+  source_type: "pdf" | "text";
+  filename: string | null;
+  character_count: number;
+  chunk_count: number;
+  created_at: string;
 };

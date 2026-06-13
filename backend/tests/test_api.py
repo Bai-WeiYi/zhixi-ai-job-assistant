@@ -42,6 +42,7 @@ class FakeLLM:
         job_description,
         question,
         answer_text,
+        references=None,
     ) -> LLMInterviewEvaluation:
         return LLMInterviewEvaluation(
             feedback=InterviewFeedback(
@@ -63,7 +64,7 @@ class FailingLLM:
     async def analyze(self, resume_text: str, job_description: str):
         raise LLMServiceError("模型响应超时，请稍后重试")
 
-    async def evaluate_interview_answer(self, *args):
+    async def evaluate_interview_answer(self, *args, **kwargs):
         raise LLMServiceError("模型响应超时，请稍后重试")
 
 

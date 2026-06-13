@@ -1,9 +1,39 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import UserDefinedType
 
 from app.database import Base
+
+
+class VectorType(UserDefinedType):
+    """声明 pgvector 列；SQLite 编译时会退化为普通文本。"""
+
+    cache_ok = True
+
+    def __init__(self, dimensions: int):
+        self.dimensions = dimensions
+
+    def get_col_spec(self, **kw) -> str:
+        return f"vector({self.dimensions})"
+
+    def bind_processor(self, dialect):
+        del dialect
+
+        def process(value):
+            if isinstance(value, list):
+                return "[" + ",".join(f"{item:.10g}" for item in value) + "]"
+            return value
+
+        return process
+
+
+@compiles(VectorType, "sqlite")
+def compile_vector_for_sqlite(type_, compiler, **kw):
+    del type_, compiler, kw
+    return "TEXT"
 
 
 class User(Base):
@@ -20,6 +50,10 @@ class User(Base):
     )
     analyses: Mapped[list["Analysis"]] = relationship(back_populates="user")
     usage_events: Mapped[list["AIUsageEvent"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    knowledge_documents: Mapped[list["KnowledgeDocument"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -72,11 +106,55 @@ class InterviewAttempt(Base):
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_ms: Mapped[int] = mapped_column(Integer)
+    rag_context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
     )
     analysis: Mapped[Analysis] = relationship(back_populates="interview_attempts")
+
+
+class KnowledgeDocument(Base):
+    """保存用户上传的知识资料及其切块统计。"""
+
+    __tablename__ = "knowledge_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    source_type: Mapped[str] = mapped_column(String(20))
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    character_count: Mapped[int] = mapped_column(Integer)
+    chunk_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    user: Mapped[User] = relationship(back_populates="knowledge_documents")
+    chunks: Mapped[list["KnowledgeChunk"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
+
+
+class KnowledgeChunk(Base):
+    """保存可检索的文本片段和对应语义向量。"""
+
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (
+        Index("ix_knowledge_chunks_user_id_document_id", "user_id", "document_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("knowledge_documents.id"),
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[str] = mapped_column(VectorType(1024))
+    document: Mapped[KnowledgeDocument] = relationship(back_populates="chunks")
 
 
 class AIUsageEvent(Base):
