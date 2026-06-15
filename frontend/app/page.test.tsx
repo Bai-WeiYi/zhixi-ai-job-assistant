@@ -18,6 +18,7 @@ vi.mock("@/lib/api", () => ({
 const analysis = {
   id: 3,
   model_name: "test",
+  prompt_version: "analysis-v2",
   duration_ms: 1000,
   prompt_tokens: 10,
   completion_tokens: 20,

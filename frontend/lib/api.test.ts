@@ -75,4 +75,20 @@ describe("API 鉴权请求", () => {
 
     await expect(getUsage()).rejects.toThrow("免费服务首次访问可能需要约一分钟唤醒");
   });
+
+  it("读取后端结构化 AI 错误中的友好提示", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: {
+            code: "llm_timeout",
+            message: "AI 服务响应超时，请稍后重试",
+          },
+        }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(getUsage()).rejects.toThrow("AI 服务响应超时，请稍后重试");
+  });
 });

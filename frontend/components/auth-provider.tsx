@@ -31,6 +31,10 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const PUBLIC_PATHS = new Set(["/login", "/register"]);
 
+export function isSafeNextPath(path: string) {
+  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\");
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -83,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await action(email, password);
     setAccessToken(result.access_token);
     setUser(result.user);
-    router.replace(nextPath.startsWith("/") ? nextPath : "/");
+    router.replace(isSafeNextPath(nextPath) ? nextPath : "/");
   }
 
   function logout() {

@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import re
 from dataclasses import dataclass
@@ -6,7 +7,7 @@ from io import BytesIO
 
 from openai import APIConnectionError, APITimeoutError, AsyncOpenAI
 from pypdf import PdfReader
-from sqlalchemy import select, text
+from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -16,6 +17,53 @@ from app.schemas import KnowledgeReference
 
 class KnowledgeServiceError(RuntimeError):
     """统一包装知识解析、向量化和检索异常。"""
+
+    def __init__(
+        self,
+        message: str,
+        code: str = "knowledge_invalid_input",
+    ):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+logger = logging.getLogger(__name__)
+
+
+def validate_embedding_dimensions(settings: Settings, engine: Engine) -> None:
+    """Fail fast when runtime dimensions diverge from the vector schema."""
+    model_dimensions = KnowledgeChunk.__table__.c.embedding.type.dimensions
+    if settings.embedding_dimensions != model_dimensions:
+        raise RuntimeError(
+            "EMBEDDING_DIMENSIONS "
+            f"must be {model_dimensions}, got {settings.embedding_dimensions}"
+        )
+    if engine.dialect.name != "postgresql":
+        return
+    with engine.connect() as connection:
+        database_type = connection.scalar(
+            text(
+                """
+                SELECT format_type(attribute.atttypid, attribute.atttypmod)
+                FROM pg_attribute AS attribute
+                JOIN pg_class AS relation
+                  ON relation.oid = attribute.attrelid
+                JOIN pg_namespace AS namespace
+                  ON namespace.oid = relation.relnamespace
+                WHERE relation.relname = 'knowledge_chunks'
+                  AND attribute.attname = 'embedding'
+                  AND namespace.nspname = current_schema()
+                  AND attribute.attnum > 0
+                  AND NOT attribute.attisdropped
+                """
+            )
+        )
+    expected_type = f"vector({settings.embedding_dimensions})"
+    if database_type not in (None, "text", expected_type):
+        raise RuntimeError(
+            f"knowledge_chunks.embedding must be {expected_type}, got {database_type}"
+        )
 
 
 @dataclass
@@ -137,24 +185,40 @@ class EmbeddingService:
 
     async def embed(self, inputs: list[str]) -> list[list[float]]:
         if not self.settings.embedding_api_key:
-            raise KnowledgeServiceError("尚未配置 EMBEDDING_API_KEY")
+            raise KnowledgeServiceError(
+                "向量服务尚未配置，请联系管理员",
+                "embedding_not_configured",
+            )
         try:
             response = await self.client.embeddings.create(
                 model=self.settings.embedding_model,
                 input=inputs,
             )
         except APITimeoutError as exc:
-            raise KnowledgeServiceError("向量服务响应超时，请稍后重试") from exc
+            raise KnowledgeServiceError(
+                "向量服务响应超时，请稍后重试",
+                "embedding_timeout",
+            ) from exc
         except APIConnectionError as exc:
-            raise KnowledgeServiceError("无法连接向量服务，请检查网络和接口地址") from exc
+            raise KnowledgeServiceError(
+                "向量服务暂时不可用，请稍后重试",
+                "embedding_unavailable",
+            ) from exc
         except Exception as exc:
-            raise KnowledgeServiceError(f"向量服务调用失败：{exc}") from exc
+            logger.exception("Unexpected embedding provider failure")
+            raise KnowledgeServiceError(
+                "向量服务调用失败，请稍后重试",
+                "embedding_provider_error",
+            ) from exc
 
         vectors = [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
         if len(vectors) != len(inputs) or any(
             len(vector) != self.settings.embedding_dimensions for vector in vectors
         ):
-            raise KnowledgeServiceError("向量服务返回的数据数量或维度不正确")
+            raise KnowledgeServiceError(
+                "向量服务返回的数据数量或维度不正确",
+                "embedding_invalid_output",
+            )
         return vectors
 
 

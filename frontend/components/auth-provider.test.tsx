@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { AuthProvider, useAuth } from "@/components/auth-provider";
+import {
+  AuthProvider,
+  isSafeNextPath,
+  useAuth,
+} from "@/components/auth-provider";
 import {
   clearAccessToken,
   getAccessToken,
@@ -118,4 +122,11 @@ it("受保护页面会恢复已有登录状态", async () => {
 
   expect(screen.getByText("正在确认登录状态...")).toBeInTheDocument();
   await waitFor(() => expect(screen.getByText("user@example.com")).toBeInTheDocument());
+});
+
+it("登录后跳转只允许站内绝对路径", () => {
+  expect(isSafeNextPath("/history")).toBe(true);
+  expect(isSafeNextPath("//example.com")).toBe(false);
+  expect(isSafeNextPath("/\\example.com")).toBe(false);
+  expect(isSafeNextPath("https://example.com")).toBe(false);
 });

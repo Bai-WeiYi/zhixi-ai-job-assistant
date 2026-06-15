@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from dataclasses import dataclass
 
@@ -13,9 +14,18 @@ from app.schemas import (
     KnowledgeReference,
 )
 
+ANALYSIS_PROMPT_VERSION = "analysis-v2"
+INTERVIEW_PROMPT_VERSION = "interview-v3"
+logger = logging.getLogger(__name__)
+
 
 class LLMServiceError(RuntimeError):
     """将第三方模型异常转换为应用内部的统一错误。"""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
 @dataclass
@@ -26,6 +36,7 @@ class LLMAnalysis:
     prompt_tokens: int | None
     completion_tokens: int | None
     total_tokens: int | None
+    prompt_version: str = ANALYSIS_PROMPT_VERSION
 
 
 @dataclass
@@ -36,6 +47,7 @@ class LLMInterviewEvaluation:
     prompt_tokens: int | None
     completion_tokens: int | None
     total_tokens: int | None
+    prompt_version: str = INTERVIEW_PROMPT_VERSION
 
 
 SYSTEM_PROMPT = """你是一名严谨的中文技术招聘顾问。
@@ -57,6 +69,7 @@ SYSTEM_PROMPT = """你是一名严谨的中文技术招聘顾问。
 INTERVIEW_FEEDBACK_PROMPT = """你是一名严格但有建设性的中文技术面试官。
 请结合候选人简历、目标岗位、面试题、考察目的和参考要点，评价候选人的实际回答。
 不要因为回答篇幅长而提高分数，也不要虚构回答中不存在的内容。
+strengths 必须包含至少一项。即使回答很弱，也要指出一项真实、有限的优点，例如回应了题目方向；不得为了填充字段而拔高评价。
 只返回 JSON，不要使用 Markdown 代码块。
 返回结构：
 {
@@ -79,7 +92,10 @@ class LLMService:
 
     async def analyze(self, resume_text: str, job_description: str) -> LLMAnalysis:
         if not self.settings.deepseek_api_key:
-            raise LLMServiceError("尚未配置 DEEPSEEK_API_KEY")
+            raise LLMServiceError(
+                "llm_not_configured",
+                "AI 服务尚未配置，请联系管理员",
+            )
 
         user_prompt = f"候选人简历：\n{resume_text}\n\n职位描述：\n{job_description}"
         started_at = time.perf_counter()
@@ -116,17 +132,31 @@ class LLMService:
                     prompt_tokens=getattr(usage, "prompt_tokens", None),
                     completion_tokens=getattr(usage, "completion_tokens", None),
                     total_tokens=getattr(usage, "total_tokens", None),
+                    prompt_version=ANALYSIS_PROMPT_VERSION,
                 )
             except (json.JSONDecodeError, ValidationError, IndexError) as exc:
                 last_error = exc
             except APITimeoutError as exc:
-                raise LLMServiceError("模型响应超时，请稍后重试") from exc
+                raise LLMServiceError(
+                    "llm_timeout",
+                    "AI 服务响应超时，请稍后重试",
+                ) from exc
             except APIConnectionError as exc:
-                raise LLMServiceError("无法连接模型服务，请检查网络和接口地址") from exc
+                raise LLMServiceError(
+                    "llm_unavailable",
+                    "AI 服务暂时不可用，请稍后重试",
+                ) from exc
             except Exception as exc:
-                raise LLMServiceError(f"模型调用失败：{exc}") from exc
+                logger.exception("Unexpected LLM analysis failure")
+                raise LLMServiceError(
+                    "llm_provider_error",
+                    "AI 服务调用失败，请稍后重试",
+                ) from exc
 
-        raise LLMServiceError("模型连续两次返回了无效结构") from last_error
+        raise LLMServiceError(
+            "llm_invalid_output",
+            "AI 服务连续返回了无效结果，请稍后重试",
+        ) from last_error
 
     async def evaluate_interview_answer(
         self,
@@ -138,7 +168,10 @@ class LLMService:
     ) -> LLMInterviewEvaluation:
         """评价单道面试回答，并保证模型输出符合固定结构。"""
         if not self.settings.deepseek_api_key:
-            raise LLMServiceError("尚未配置 DEEPSEEK_API_KEY")
+            raise LLMServiceError(
+                "llm_not_configured",
+                "AI 服务尚未配置，请联系管理员",
+            )
 
         reference_context = ""
         if references:
@@ -195,14 +228,28 @@ class LLMService:
                     prompt_tokens=getattr(usage, "prompt_tokens", None),
                     completion_tokens=getattr(usage, "completion_tokens", None),
                     total_tokens=getattr(usage, "total_tokens", None),
+                    prompt_version=INTERVIEW_PROMPT_VERSION,
                 )
             except (json.JSONDecodeError, ValidationError, IndexError) as exc:
                 last_error = exc
             except APITimeoutError as exc:
-                raise LLMServiceError("模型响应超时，请稍后重试") from exc
+                raise LLMServiceError(
+                    "llm_timeout",
+                    "AI 服务响应超时，请稍后重试",
+                ) from exc
             except APIConnectionError as exc:
-                raise LLMServiceError("无法连接模型服务，请检查网络和接口地址") from exc
+                raise LLMServiceError(
+                    "llm_unavailable",
+                    "AI 服务暂时不可用，请稍后重试",
+                ) from exc
             except Exception as exc:
-                raise LLMServiceError(f"模型调用失败：{exc}") from exc
+                logger.exception("Unexpected LLM interview evaluation failure")
+                raise LLMServiceError(
+                    "llm_provider_error",
+                    "AI 服务调用失败，请稍后重试",
+                ) from exc
 
-        raise LLMServiceError("模型连续两次返回了无效评分结构") from last_error
+        raise LLMServiceError(
+            "llm_invalid_output",
+            "AI 服务连续返回了无效评分结果，请稍后重试",
+        ) from last_error

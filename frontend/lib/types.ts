@@ -17,6 +17,7 @@ export type AnalysisResponse = {
   id: number;
   result: AnalysisResult;
   model_name: string;
+  prompt_version: string;
   duration_ms: number;
   prompt_tokens: number | null;
   completion_tokens: number | null;
@@ -47,6 +48,7 @@ export type InterviewAttempt = {
   answer_text: string;
   feedback: InterviewFeedback;
   model_name: string;
+  prompt_version: string;
   duration_ms: number;
   prompt_tokens: number | null;
   completion_tokens: number | null;

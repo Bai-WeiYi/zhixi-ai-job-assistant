@@ -10,6 +10,7 @@ from app.schemas import AnalysisResult, InterviewFeedback
 from app.services.auth import hash_password
 
 DEMO_MODEL_NAME = "demo-local"
+DEMO_PROMPT_VERSION = "demo-v1"
 DEMO_RESUME = """候选人有 2 年 Python 开发经验，熟悉 FastAPI、SQLAlchemy、SQLite 和 REST API。
 独立完成 AI 求职面试助手，负责需求拆解、后端接口、DeepSeek 接入、结构化输出校验、
 Next.js 前端联调和自动化测试。项目支持 PDF 简历解析、岗位匹配分析和模拟面试评分。"""
@@ -128,6 +129,7 @@ def seed_demo_data(
         job_description=DEMO_JOB_DESCRIPTION,
         result_json=result.model_dump_json(),
         model_name=DEMO_MODEL_NAME,
+        prompt_version=DEMO_PROMPT_VERSION,
         prompt_tokens=1280,
         completion_tokens=1620,
         total_tokens=2900,
@@ -188,6 +190,7 @@ def seed_demo_data(
                 answer_text=answer_text,
                 feedback_json=attempt_feedback.model_dump_json(),
                 model_name=DEMO_MODEL_NAME,
+                prompt_version=DEMO_PROMPT_VERSION,
                 prompt_tokens=620,
                 completion_tokens=380,
                 total_tokens=1000,

@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
 from app.config import get_settings
-from app.services.knowledge import EmbeddingService
+from app.database import engine
+from app.services.knowledge import EmbeddingService, validate_embedding_dimensions
 from app.services.llm import LLMService
 
 settings = get_settings()
@@ -14,6 +15,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """数据库结构由 Alembic 管理，应用启动时只初始化外部服务。"""
+    validate_embedding_dimensions(settings, engine)
     app.state.llm_service = LLMService(settings)
     app.state.embedding_service = EmbeddingService(settings)
     yield

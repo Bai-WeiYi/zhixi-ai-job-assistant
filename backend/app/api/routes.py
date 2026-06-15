@@ -95,6 +95,7 @@ def build_response(record: Analysis) -> AnalysisResponse:
         id=record.id,
         result=AnalysisResult.model_validate_json(record.result_json),
         model_name=record.model_name,
+        prompt_version=record.prompt_version,
         duration_ms=record.duration_ms,
         prompt_tokens=record.prompt_tokens,
         completion_tokens=record.completion_tokens,
@@ -120,6 +121,7 @@ def build_attempt_response(record: InterviewAttempt) -> InterviewAttemptResponse
         answer_text=record.answer_text,
         feedback=InterviewFeedback.model_validate_json(record.feedback_json),
         model_name=record.model_name,
+        prompt_version=record.prompt_version,
         duration_ms=record.duration_ms,
         prompt_tokens=record.prompt_tokens,
         completion_tokens=record.completion_tokens,
@@ -151,6 +153,10 @@ def raise_usage_limit(exc: UsageLimitExceeded) -> None:
         detail="今日 AI 使用次数已达上限，请在额度重置后再试",
         headers={"Retry-After": str(retry_after)},
     )
+
+
+def service_error_detail(code: str, message: str) -> dict[str, str]:
+    return {"code": code, "message": message}
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -283,7 +289,10 @@ async def create_knowledge_document(
         vectors = await request.app.state.embedding_service.embed(chunks)
     except KnowledgeServiceError as exc:
         finish_usage(db, usage_event, "failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=service_error_detail(exc.code, exc.message),
+        ) from exc
 
     try:
         document = KnowledgeDocument(
@@ -379,7 +388,10 @@ async def create_analysis(
         )
     except LLMServiceError as exc:
         finish_usage(db, usage_event, "failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=service_error_detail(exc.code, exc.message),
+        ) from exc
 
     record = Analysis(
         user_id=current_user.id,
@@ -387,6 +399,7 @@ async def create_analysis(
         job_description=payload.job_description,
         result_json=analysis.result.model_dump_json(),
         model_name=analysis.model_name,
+        prompt_version=analysis.prompt_version,
         prompt_tokens=analysis.prompt_tokens,
         completion_tokens=analysis.completion_tokens,
         total_tokens=analysis.total_tokens,
@@ -503,7 +516,10 @@ async def create_interview_attempt(
         )
     except LLMServiceError as exc:
         finish_usage(db, usage_event, "failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=service_error_detail(exc.code, exc.message),
+        ) from exc
 
     attempt = InterviewAttempt(
         analysis_id=record.id,
@@ -512,6 +528,7 @@ async def create_interview_attempt(
         answer_text=payload.answer_text,
         feedback_json=evaluation.feedback.model_dump_json(),
         model_name=evaluation.model_name,
+        prompt_version=evaluation.prompt_version,
         prompt_tokens=evaluation.prompt_tokens,
         completion_tokens=evaluation.completion_tokens,
         total_tokens=evaluation.total_tokens,

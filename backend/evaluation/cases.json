@@ -1,0 +1,72 @@
+{
+  "analysis_cases": [
+    {
+      "id": "fullstack-ai-match",
+      "resume": "候选人有两年 Python Web 开发经验，使用 FastAPI、SQLAlchemy 和 PostgreSQL 开发过 REST API。独立完成一个 Next.js 与 FastAPI 构建的 AI 求职助手，接入大模型结构化输出、向量检索、自动化测试和云端部署。",
+      "job_description": "招聘 AI 全栈应用工程师，负责使用 Python、FastAPI、React 或 Next.js 开发大模型应用。要求理解 RAG、数据库设计、API 集成、测试、部署和线上问题排查。"
+    }
+  ],
+  "interview_pairs": [
+    {
+      "id": "structured-output-quality",
+      "resume": "候选人开发过 FastAPI 与大模型结合的全栈应用。",
+      "job_description": "岗位要求能够处理大模型输出不稳定、接口异常和生产部署问题。",
+      "question": {
+        "question": "你如何保证大模型返回的结构化结果可以被业务系统可靠使用？",
+        "purpose": "考察结构化输出、异常处理和工程可靠性",
+        "answer_points": [
+          "使用固定 JSON Schema 或 Pydantic 校验",
+          "失败时进行有限重试",
+          "记录错误并向用户返回稳定提示",
+          "通过测试覆盖异常输出"
+        ]
+      },
+      "weak_answer": "我会在提示词里要求模型返回 JSON，如果出错就让用户再试一次。",
+      "strong_answer": "我会同时约束模型响应格式并使用 Pydantic 做二次校验，检查字段、类型、范围和数组长度。校验失败时携带纠错提示重试一次，仍失败则记录服务端错误并返回稳定错误码。测试中会模拟非法 JSON、缺字段、超时和连接失败，避免原始供应商异常泄露给用户。"
+    },
+    {
+      "id": "rag-engineering-quality",
+      "resume": "候选人实现过基于 BGE-M3 和 PostgreSQL pgvector 的知识库。",
+      "job_description": "岗位要求理解 RAG 检索质量、引用展示和降级策略。",
+      "question": {
+        "question": "你会如何设计并验证一个面试知识库的 RAG 检索链路？",
+        "purpose": "考察 RAG 数据流、可解释性和评测意识",
+        "answer_points": [
+          "文档解析与分块",
+          "Embedding 与相似度检索",
+          "引用来源展示",
+          "使用固定查询评测 Recall@K",
+          "向量服务不可用时降级"
+        ]
+      },
+      "weak_answer": "把 PDF 发给模型，让模型根据资料回答问题。",
+      "strong_answer": "上传后先提取文本并按段落分块，生成向量并按用户隔离存储。评分前对题目向量化，使用余弦相似度召回 Top-K，过滤低相关片段后连同来源交给模型，并在界面展示标题、片段和相似度。我会准备固定查询和目标资料计算 Recall@K，同时记录延迟；Embedding 临时失败时降级为无 RAG 评分。"
+    }
+  ],
+  "retrieval_cases": [
+    {
+      "id": "security-reference",
+      "query": "接口如何处理模型超时并避免泄露供应商错误？",
+      "expected_document": "AI 服务异常处理规范"
+    },
+    {
+      "id": "rag-reference",
+      "query": "怎样验证向量检索是否找到了正确资料？",
+      "expected_document": "RAG 评测规范"
+    }
+  ],
+  "knowledge_documents": [
+    {
+      "title": "AI 服务异常处理规范",
+      "content": "捕获模型连接失败和超时，在服务端记录详细异常。客户端只接收稳定错误码与友好提示，不暴露供应商响应、请求地址或内部堆栈。"
+    },
+    {
+      "title": "RAG 评测规范",
+      "content": "为知识库准备固定查询和目标文档，统计目标文档是否出现在 Top-K 结果中，即 Recall@K。同时记录检索耗时、相似度和错误案例。"
+    },
+    {
+      "title": "前端交互规范",
+      "content": "提交耗时任务时显示加载状态，失败后保留用户输入并提供重试入口。移动端布局不得出现横向溢出。"
+    }
+  ]
+}

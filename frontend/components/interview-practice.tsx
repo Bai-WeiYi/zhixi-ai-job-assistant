@@ -186,6 +186,9 @@ export function InterviewPractice({ analysis }: Props) {
           rows={7}
           value={answerText}
         />
+        <p className="privacy-note">
+          回答内容会发送至第三方 AI 服务进行评分，请勿填写身份证号、联系方式等敏感信息。
+        </p>
         {error ? <div className="error-message">{error}</div> : null}
         {success ? (
           <div className="success-message" role="status">
@@ -275,6 +278,27 @@ export function InterviewPractice({ analysis }: Props) {
                 ))}
               </div>
             ) : null}
+            <details className="ai-runtime-details compact">
+              <summary>本次评分运行详情</summary>
+              <dl>
+                <div>
+                  <dt>模型</dt>
+                  <dd>{latestAttempt.model_name}</dd>
+                </div>
+                <div>
+                  <dt>Prompt 版本</dt>
+                  <dd>{latestAttempt.prompt_version}</dd>
+                </div>
+                <div>
+                  <dt>响应耗时</dt>
+                  <dd>{(latestAttempt.duration_ms / 1000).toFixed(1)} 秒</dd>
+                </div>
+                <div>
+                  <dt>Token</dt>
+                  <dd>{latestAttempt.total_tokens ?? "--"}</dd>
+                </div>
+              </dl>
+            </details>
             {currentAttempts.length > 1 ? (
               <div className="attempt-history">
                 <h4>

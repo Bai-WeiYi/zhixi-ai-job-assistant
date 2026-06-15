@@ -85,10 +85,32 @@ export function AnalysisResultView({ analysis }: Props) {
 
       <InterviewPractice analysis={analysis} />
 
-      <footer className="result-meta">
-        模型：{analysis.model_name} · 耗时 {(analysis.duration_ms / 1000).toFixed(1)} 秒
-        {analysis.total_tokens ? ` · ${analysis.total_tokens} tokens` : ""}
-      </footer>
+      <details className="ai-runtime-details">
+        <summary>AI 运行详情</summary>
+        <dl>
+          <div>
+            <dt>模型</dt>
+            <dd>{analysis.model_name}</dd>
+          </div>
+          <div>
+            <dt>Prompt 版本</dt>
+            <dd>{analysis.prompt_version}</dd>
+          </div>
+          <div>
+            <dt>响应耗时</dt>
+            <dd>{(analysis.duration_ms / 1000).toFixed(1)} 秒</dd>
+          </div>
+          <div>
+            <dt>Token</dt>
+            <dd>
+              {analysis.total_tokens ?? "--"}
+              {analysis.prompt_tokens !== null && analysis.completion_tokens !== null
+                ? `（输入 ${analysis.prompt_tokens} / 输出 ${analysis.completion_tokens}）`
+                : ""}
+            </dd>
+          </div>
+        </dl>
+      </details>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import json
 
-from sqlalchemy import select
+import pytest
+from sqlalchemy import create_engine, select
 
 from app.config import get_settings
 from app.models import InterviewAttempt, KnowledgeChunk, KnowledgeDocument
@@ -9,6 +10,7 @@ from app.services.knowledge import (
     KnowledgeServiceError,
     chunk_text,
     retrieve_references,
+    validate_embedding_dimensions,
 )
 from app.services.llm import LLMAnalysis, LLMInterviewEvaluation
 
@@ -29,7 +31,10 @@ class FakeEmbedding:
 
 class FailingEmbedding:
     async def embed(self, inputs: list[str]) -> list[list[float]]:
-        raise KnowledgeServiceError("向量服务响应超时，请稍后重试")
+        raise KnowledgeServiceError(
+            "向量服务响应超时，请稍后重试",
+            "embedding_timeout",
+        )
 
 
 class FakeLLM:
@@ -126,7 +131,22 @@ def test_document_input_validation_and_embedding_failure(client, db_session):
         data={"title": "失败资料", "text": "这是一段用于测试向量服务失败回滚的知识资料。" * 4},
     )
     assert failed.status_code == 502
+    assert failed.json()["detail"]["code"] == "embedding_timeout"
     assert db_session.scalars(select(KnowledgeDocument)).all() == []
+
+
+def test_embedding_dimensions_are_validated_at_startup():
+    engine = create_engine("sqlite://")
+    validate_embedding_dimensions(
+        get_settings().model_copy(update={"embedding_dimensions": 1024}),
+        engine,
+    )
+
+    with pytest.raises(RuntimeError, match="must be 1024"):
+        validate_embedding_dimensions(
+            get_settings().model_copy(update={"embedding_dimensions": 768}),
+            engine,
+        )
 
 
 def test_retrieval_filters_by_user(db_session):

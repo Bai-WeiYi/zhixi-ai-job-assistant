@@ -30,6 +30,9 @@ def test_migration_creates_empty_database(tmp_path, monkeypatch):
     assert "user_id" in {
         column["name"] for column in inspector.get_columns("analyses")
     }
+    assert "prompt_version" in {
+        column["name"] for column in inspector.get_columns("analyses")
+    }
 
 
 def test_migration_preserves_legacy_analysis(tmp_path, monkeypatch):
@@ -65,8 +68,12 @@ def test_migration_preserves_legacy_analysis(tmp_path, monkeypatch):
     engine = create_engine(f"sqlite:///{database_path.as_posix()}")
     with engine.connect() as migrated:
         row = migrated.execute(
-            text("SELECT id, user_id, model_name FROM analyses WHERE id = 1")
+            text(
+                "SELECT id, user_id, model_name, prompt_version "
+                "FROM analyses WHERE id = 1"
+            )
         ).one()
     assert row.id == 1
     assert row.user_id is None
     assert row.model_name == "legacy-model"
+    assert row.prompt_version == "legacy-v1"

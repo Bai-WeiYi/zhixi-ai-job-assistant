@@ -16,6 +16,7 @@ vi.mock("@/lib/api", () => ({
 const analysis = {
   id: 1,
   model_name: "test",
+  prompt_version: "analysis-v2",
   duration_ms: 1000,
   prompt_tokens: 10,
   completion_tokens: 20,
@@ -66,6 +67,7 @@ describe("AnalysisResultView", () => {
         suggested_answer_points: ["背景", "行动", "结果"],
       },
       model_name: "test",
+      prompt_version: "interview-v2",
       duration_ms: 500,
       prompt_tokens: 10,
       completion_tokens: 20,
@@ -86,6 +88,8 @@ describe("AnalysisResultView", () => {
     expect(screen.getAllByText("88")).toHaveLength(2);
     expect(screen.getByText("评分完成：本次 88 分。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "再次提交练习" })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("本次评分运行详情"));
+    expect(screen.getByText("interview-v2")).toBeInTheDocument();
   });
 
   it("评分失败时保留回答，切换题目时保留草稿", async () => {

@@ -776,6 +776,48 @@ textarea:focus {
   text-align: right;
 }
 
+.ai-runtime-details {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ai-runtime-details.compact {
+  margin-top: 18px;
+}
+
+.ai-runtime-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.ai-runtime-details dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+  margin: 14px 0 0;
+}
+
+.ai-runtime-details dl div {
+  min-width: 0;
+}
+
+.ai-runtime-details dt {
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-runtime-details dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--text);
+}
+
 .practice-section {
   margin-top: 42px;
   padding-top: 32px;
@@ -1522,6 +1564,10 @@ textarea:focus {
 
   .knowledge-quota {
     width: 100%;
+  }
+
+  .ai-runtime-details dl {
+    grid-template-columns: 1fr;
   }
 }
 

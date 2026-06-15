@@ -88,6 +88,7 @@ class InterviewAttemptResponse(BaseModel):
     answer_text: str
     feedback: InterviewFeedback
     model_name: str
+    prompt_version: str
     duration_ms: int
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
@@ -100,6 +101,7 @@ class AnalysisResponse(BaseModel):
     id: int
     result: AnalysisResult
     model_name: str
+    prompt_version: str
     duration_ms: int
     prompt_tokens: int | None = None
     completion_tokens: int | None = None

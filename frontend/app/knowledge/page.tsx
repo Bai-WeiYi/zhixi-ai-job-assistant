@@ -151,6 +151,9 @@ export default function KnowledgePage() {
             {file ? <span className="selected-file">{file.name}</span> : null}
           </div>
         </div>
+        <p className="privacy-note">
+          文档片段会发送至第三方向量服务生成 Embedding，请勿上传未获授权的机密资料。
+        </p>
 
         {error ? <div className="error-message">{error}</div> : null}
         {success ? <div className="success-message">{success}</div> : null}

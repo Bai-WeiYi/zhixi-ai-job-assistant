@@ -62,10 +62,10 @@ class FakeLLM:
 
 class FailingLLM:
     async def analyze(self, resume_text: str, job_description: str):
-        raise LLMServiceError("模型响应超时，请稍后重试")
+        raise LLMServiceError("llm_timeout", "AI 服务响应超时，请稍后重试")
 
     async def evaluate_interview_answer(self, *args, **kwargs):
-        raise LLMServiceError("模型响应超时，请稍后重试")
+        raise LLMServiceError("llm_timeout", "AI 服务响应超时，请稍后重试")
 
 
 def valid_payload():
@@ -152,6 +152,7 @@ def test_create_list_get_and_delete_analysis(client):
     assert created.status_code == 201
     analysis_id = created.json()["id"]
     assert created.json()["result"]["match_score"] == 82
+    assert created.json()["prompt_version"] == "analysis-v2"
 
     listed = client.get("/api/analyses")
     assert listed.status_code == 200
@@ -174,7 +175,10 @@ def test_model_error_is_readable(client):
     client.app.state.llm_service = FailingLLM()
     response = client.post("/api/analyses", json=valid_payload())
     assert response.status_code == 502
-    assert "超时" in response.json()["detail"]
+    assert response.json()["detail"] == {
+        "code": "llm_timeout",
+        "message": "AI 服务响应超时，请稍后重试",
+    }
 
 
 def test_failed_analysis_counts_toward_daily_limit(client, db_session, monkeypatch):
@@ -216,6 +220,7 @@ def test_create_and_list_interview_attempts(client, db_session):
 
     assert first.status_code == 201
     assert first.json()["feedback"]["score"] == 86
+    assert first.json()["prompt_version"] == "interview-v3"
     assert second.status_code == 201
 
     listed = client.get(f"/api/analyses/{analysis_id}/interview-attempts")
@@ -259,7 +264,7 @@ def test_interview_model_error_is_readable(client):
         json={"answer_text": "这是一段超过二十个字符的回答，用来验证模型超时错误能够正常返回。"},
     )
     assert response.status_code == 502
-    assert "超时" in response.json()["detail"]
+    assert response.json()["detail"]["code"] == "llm_timeout"
 
 
 def test_invalid_pdf(client):

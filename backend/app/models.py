@@ -75,6 +75,11 @@ class Analysis(Base):
     job_description: Mapped[str] = mapped_column(Text)
     result_json: Mapped[str] = mapped_column(Text)
     model_name: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(
+        String(50),
+        default="legacy-v1",
+        server_default="legacy-v1",
+    )
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -102,6 +107,11 @@ class InterviewAttempt(Base):
     answer_text: Mapped[str] = mapped_column(Text)
     feedback_json: Mapped[str] = mapped_column(Text)
     model_name: Mapped[str] = mapped_column(String(100))
+    prompt_version: Mapped[str] = mapped_column(
+        String(50),
+        default="legacy-v1",
+        server_default="legacy-v1",
+    )
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)

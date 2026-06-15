@@ -93,7 +93,7 @@ async def test_two_invalid_outputs_fail():
     service = LLMService(Settings(deepseek_api_key="test"))
     service.client.chat.completions = FakeCompletions(["{}", "{}"])
 
-    with pytest.raises(LLMServiceError, match="连续两次"):
+    with pytest.raises(LLMServiceError, match="连续返回了无效结果"):
         await service.analyze("简历" * 30, "职位" * 30)
 
 
@@ -142,11 +142,29 @@ async def test_feedback_prompt_includes_rag_references():
 
 
 @pytest.mark.asyncio
+async def test_feedback_prompt_requires_a_truthful_strength():
+    service = LLMService(Settings(deepseek_api_key="test"))
+    completions = FakeCompletions([valid_feedback_json()])
+    service.client.chat.completions = completions
+
+    result = await service.evaluate_interview_answer(
+        "简历" * 30,
+        "职位" * 30,
+        sample_question(),
+        "我暂时没有完整经验，但会先说明自己的理解和排查思路。",
+    )
+
+    system_prompt = completions.last_kwargs["messages"][0]["content"]
+    assert "strengths 必须包含至少一项" in system_prompt
+    assert result.prompt_version == "interview-v3"
+
+
+@pytest.mark.asyncio
 async def test_two_invalid_feedback_outputs_fail():
     service = LLMService(Settings(deepseek_api_key="test"))
     service.client.chat.completions = FakeCompletions(["{}", "{}"])
 
-    with pytest.raises(LLMServiceError, match="无效评分结构"):
+    with pytest.raises(LLMServiceError, match="无效评分结果"):
         await service.evaluate_interview_answer(
             "简历" * 30,
             "职位" * 30,
@@ -165,7 +183,7 @@ async def test_two_invalid_feedback_outputs_fail():
                 message="connection failed",
                 request=httpx.Request("POST", "https://example.com"),
             ),
-            "无法连接",
+            "暂时不可用",
         ),
     ],
 )
@@ -180,3 +198,17 @@ async def test_feedback_api_errors_are_readable(error, message):
             sample_question(),
             "我比较了不同技术方案，并结合项目规模选择了 FastAPI，最终完成接口交付。",
         )
+
+
+@pytest.mark.asyncio
+async def test_provider_error_does_not_expose_original_message():
+    service = LLMService(Settings(deepseek_api_key="test"))
+    service.client.chat.completions = ErrorCompletions(
+        RuntimeError("secret upstream response")
+    )
+
+    with pytest.raises(LLMServiceError) as raised:
+        await service.analyze("简历" * 30, "职位" * 30)
+
+    assert raised.value.code == "llm_provider_error"
+    assert "secret upstream response" not in str(raised.value)

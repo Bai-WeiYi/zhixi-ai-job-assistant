@@ -1,0 +1,75 @@
+{
+  "generated_at": "2026-06-15T19:14:53.368161+00:00",
+  "models": {
+    "llm": "deepseek-chat",
+    "embedding": "BAAI/bge-m3"
+  },
+  "analysis_results": [
+    {
+      "case_id": "fullstack-ai-match",
+      "succeeded": true,
+      "match_score": 85,
+      "duration_ms": 10539,
+      "total_tokens": 1309,
+      "prompt_version": "analysis-v2"
+    }
+  ],
+  "interview_results": [
+    {
+      "case_id": "structured-output-quality",
+      "succeeded": true,
+      "weak_score": 45,
+      "strong_score": 85,
+      "score_gap": 40,
+      "weak_duration_ms": 2791,
+      "strong_duration_ms": 2765,
+      "weak_total_tokens": 528,
+      "strong_total_tokens": 544,
+      "prompt_version": "interview-v3"
+    },
+    {
+      "case_id": "rag-engineering-quality",
+      "succeeded": true,
+      "weak_score": 30,
+      "strong_score": 75,
+      "score_gap": 45,
+      "weak_duration_ms": 4488,
+      "strong_duration_ms": 4112,
+      "weak_total_tokens": 641,
+      "strong_total_tokens": 706,
+      "prompt_version": "interview-v3"
+    }
+  ],
+  "retrieval_results": [
+    {
+      "case_id": "security-reference",
+      "succeeded": true,
+      "expected_document": "AI 服务异常处理规范",
+      "retrieved_documents": [
+        "AI 服务异常处理规范",
+        "前端交互规范",
+        "RAG 评测规范"
+      ],
+      "hit": true
+    },
+    {
+      "case_id": "rag-reference",
+      "succeeded": true,
+      "expected_document": "RAG 评测规范",
+      "retrieved_documents": [
+        "RAG 评测规范",
+        "前端交互规范",
+        "AI 服务异常处理规范"
+      ],
+      "hit": true
+    }
+  ],
+  "summary": {
+    "structured_output_success_rate": 1.0,
+    "strong_answer_win_rate": 1.0,
+    "average_strong_weak_score_gap": 42.5,
+    "rag_recall_at_k": 1.0,
+    "average_llm_latency_ms": 8231.666666666666,
+    "total_llm_tokens": 3728
+  }
+}

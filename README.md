@@ -26,6 +26,10 @@ Render 免费实例闲置后会休眠，首次打开可能需要约一分钟唤�
 - 通过用户级和全站级每日限额控制公开部署后的模型调用成本。
 - 支持 Vercel、Render 和 Neon 的免费作品集部署方案。
 - 支持个人 RAG 面试知识库：上传 PDF 或文本，检索相关标准后再由 DeepSeek 评分。
+- 为分析与评分记录保存 Prompt 版本，结果可追溯并支持后续效果对比。
+- 提供匿名固定评测集，衡量结构化输出成功率、强弱回答分差、RAG Recall@K、耗时和 token。
+- 在页面展示模型、Prompt 版本、耗时、token 和 RAG 引用，避免 AI 链路成为黑盒。
+- 对第三方 AI 异常进行服务端记录与客户端脱敏，并提供基础安全响应头和隐私提示。
 
 ## 技术栈
 
@@ -39,10 +43,27 @@ Render 免费实例闲置后会休眠，首次打开可能需要约一分钟唤�
 | 测试 | Pytest、Vitest、Testing Library |
 | 部署 | GitHub Actions、Vercel、Render、Neon |
 
+## 系统架构
+
+```mermaid
+flowchart LR
+    U["用户 / 浏览器"] --> N["Next.js 15"]
+    N -->|JWT + REST| F["FastAPI"]
+    F --> A["鉴权与用量控制"]
+    F --> L["DeepSeek<br/>结构化分析与评分"]
+    F --> E["BGE-M3 Embedding"]
+    F --> D[("SQLite / PostgreSQL")]
+    E --> V[("pgvector / Python 余弦检索")]
+    V --> F
+    F -->|结果、Prompt 版本、耗时、Token、引用| N
+    G["GitHub Actions"] -->|测试 / 类型检查 / 构建 / 密钥扫描| N
+    G --> F
+```
+
 ## 目录结构
 
 ```text
-AIwork/
+zhixi-ai-job-assistant/
 ├─ .vscode/tasks.json       # VS Code 一键启动任务
 ├─ backend/
 │  ├─ app/
@@ -52,6 +73,7 @@ AIwork/
 │  │  ├─ models.py         # SQLAlchemy 数据表
 │  │  └─ schemas.py        # 请求、响应与 AI 输出结构
 │  ├─ alembic/             # 数据库迁移脚本
+│  ├─ evaluation/          # 匿名评测集、CLI 与报告
 │  └─ tests/               # Pytest 测试
 └─ frontend/
    ├─ app/                 # Next.js 页面
@@ -105,7 +127,7 @@ DATABASE_URL=postgresql+psycopg://postgres:你的密码@localhost:5432/zhixi
 
 ### 2. 使用 VS Code 一键启动
 
-1. 用 VS Code 打开 `E:\AIwork` 文件夹。
+1. 用 VS Code 打开项目根目录。
 2. 按 `Ctrl+Shift+P`。
 3. 输入并选择 `Tasks: Run Task`。
 4. 选择 `启动完整项目`。
@@ -119,13 +141,13 @@ VS Code 会先执行 `alembic upgrade head`，再分别打开前后端任务：
 也可以使用两个终端手动启动：
 
 ```powershell
-cd E:\AIwork\backend
-E:\AIwork\.venv\Scripts\python.exe -m alembic upgrade head
-E:\AIwork\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+cd backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
 ```powershell
-cd E:\AIwork\frontend
+cd frontend
 npm run dev
 ```
 
@@ -136,8 +158,8 @@ npm run dev
 在 VS Code 的 `Tasks: Run Task` 中选择 `导入演示数据`，或执行：
 
 ```powershell
-cd E:\AIwork\backend
-E:\AIwork\.venv\Scripts\python.exe -m app.demo_seed
+cd backend
+..\.venv\Scripts\python.exe -m app.demo_seed
 ```
 
 然后打开历史记录，可以看到：
@@ -157,13 +179,13 @@ E:\AIwork\.venv\Scripts\python.exe -m app.demo_seed
 2. 在 `backend` 目录创建表结构：
 
 ```powershell
-E:\AIwork\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m alembic upgrade head
 ```
 
 3. 复制原 SQLite 数据：
 
 ```powershell
-E:\AIwork\.venv\Scripts\python.exe -m app.migrate_sqlite_to_postgres --source sqlite:///./data/job_assistant.db
+..\.venv\Scripts\python.exe -m app.migrate_sqlite_to_postgres --source sqlite:///./data/job_assistant.db
 ```
 
 也可以在 VS Code 中运行任务 `迁移 SQLite 数据到 PostgreSQL`。脚本按
@@ -185,9 +207,9 @@ React 从 localStorage 读取 JWT
 → Pydantic 校验输入
 → DeepSeek 生成 JSON
 → Pydantic 校验 AI 输出，失败重试一次
-→ SQLAlchemy 保存 analyses，并写入当前 user_id
+→ SQLAlchemy 保存 analyses、Prompt 版本和当前 user_id
 → FastAPI 返回 AnalysisResponse
-→ React 显示结果
+→ React 显示结果与 AI 运行详情
 ```
 
 ### 模拟面试评分
@@ -199,7 +221,7 @@ React 从 localStorage 读取 JWT
 → 后端读取简历、JD 和题目
 → DeepSeek 生成结构化评分
 → Pydantic 校验，失败重试一次
-→ SQLAlchemy 保存 interview_attempts
+→ SQLAlchemy 保存 interview_attempts、Prompt 版本和运行指标
 → React 更新最新分数和历次成绩
 ```
 
@@ -250,6 +272,10 @@ Authorization: Bearer <access_token>
 ```
 
 访问其他用户的分析记录统一返回 `404`，避免泄露记录是否存在。
+
+`AnalysisResponse` 和 `InterviewAttemptResponse` 都包含 `prompt_version`，
+用于判断一条历史结果由哪个 Prompt 版本产生。旧数据迁移后统一标记为
+`legacy-v1`。
 
 ## 免费部署上线
 
@@ -315,35 +341,101 @@ Render 免费后端闲置约 15 分钟会休眠，首次访问可能等待约一
 免费计算闲置时也会缩容到零。正式把链接用于集中投递前，可升级 Render
 实例以避免冷启动。
 
+## AI 效果评测
+
+`backend/evaluation/cases.json` 保存匿名固定样本，不包含真实简历或个人信息。
+本地评测会调用当前配置的 DeepSeek 与 BGE-M3，并生成：
+
+- 结构化输出成功率；
+- 优质回答相对弱回答的胜率与平均分差；
+- 固定查询的 RAG Recall@K；
+- LLM 响应耗时与 token 总量。
+
+```powershell
+cd backend
+..\.venv\Scripts\python.exe -m evaluation.run_evaluation
+```
+
+报告写入 `backend/evaluation/reports/latest.json` 和 `latest.md`，只包含聚合指标、
+案例 ID 和模型名称，不包含 API Key、简历正文或回答全文。这是一套小规模、可复现
+的工程基准，用于发现 Prompt 或检索改动造成的回归，不作为大规模科学评测结论。
+
+最新基准（2026-06-16，DeepSeek + BGE-M3）：
+
+| 指标 | 结果 |
+| --- | ---: |
+| 结构化输出成功率 | 100% |
+| 强回答胜率 | 100% |
+| 强弱回答平均分差 | 42.5 |
+| RAG Recall@K | 100% |
+| 平均 LLM 响应耗时 | 8.2 秒 |
+| LLM Token 总量 | 3,728 |
+
+查看完整的[评测摘要](backend/evaluation/reports/latest.md)和
+[匿名 JSON 报告](backend/evaluation/reports/latest.json)。
+
+## 隐私与安全边界
+
+- 简历、JD、面试回答会发送至配置的大模型服务；知识文档片段会发送至 Embedding 服务。
+- 页面明确提醒用户先移除身份证号、电话、住址和未获授权的机密资料。
+- 第三方服务原始异常只记录在后端，客户端只收到稳定错误码和友好提示。
+- Next.js 配置 CSP、禁止 iframe 嵌入、MIME 嗅探保护、Referrer Policy 和权限策略。
+- 登录后跳转只接受站内绝对路径，拒绝协议相对 URL。
+- 当前 JWT 仍保存在 `localStorage`，这是作品集阶段的明确取舍；正式生产版本应迁移到
+  HttpOnly、Secure、SameSite Cookie，并补充 CSRF 防护。
+
+## 关键技术决策
+
+- **结构化输出优先于自由文本解析**：使用模型 JSON 模式和 Pydantic 双重约束，
+  校验失败只重试一次，避免无限重试放大成本。
+- **Prompt 版本随结果保存**：历史记录可追溯，评测结果可以与具体版本对应。
+- **RAG 是评分增强而非强依赖**：Embedding 故障时回退到基础评分，核心流程仍可用。
+- **双数据库策略**：SQLite 降低本地开发门槛，PostgreSQL + pgvector 承载线上检索；
+  启动时检查向量维度，避免静默写入不兼容数据。
+- **失败调用也计入额度**：防止公开部署被反复失败请求消耗模型预算。
+
 ## 测试
 
 后端测试不会请求真实 DeepSeek：
 
 ```powershell
-cd E:\AIwork\backend
-E:\AIwork\.venv\Scripts\python.exe -m pytest
+cd backend
+..\.venv\Scripts\python.exe -m pytest
 ```
 
 前端测试、类型检查和生产构建：
 
 ```powershell
-cd E:\AIwork\frontend
+cd frontend
 npm test
 npx tsc --noEmit
 npm run build
 ```
 
+GitHub Actions 会对每次推送和 Pull Request 执行后端测试、前端测试、类型检查、
+生产构建和 Gitleaks 密钥扫描。
+
+## 简历项目描述
+
+> **职析 · AI 求职面试助手｜AI 全栈项目**
+> 使用 Next.js、FastAPI、PostgreSQL 和 DeepSeek 构建岗位匹配与模拟面试平台；
+> 通过 Pydantic 校验大模型结构化输出并实现有限纠错重试，使用 BGE-M3 与 pgvector
+> 构建带引用快照的个人 RAG 知识库。实现 JWT 数据隔离、Alembic 迁移、模型用量控制、
+> Prompt 版本追踪和固定评测集，并通过 GitHub Actions、Vercel、Render、Neon 完成
+> 自动测试与公开部署。
+
 ## 3–5 分钟面试讲解
 
 1. **项目目标**：解决简历与 JD 难以快速对照、面试准备缺少针对性的问题。
 2. **核心流程**：前端提交材料，FastAPI 校验后调用 DeepSeek，再校验模型 JSON 并保存。
-3. **主要难点**：大模型输出不稳定，因此使用 Pydantic 固定结构，并在失败时纠错重试。
+3. **主要难点**：大模型输出不稳定，因此使用 Pydantic 固定结构、有限纠错重试和错误脱敏。
 4. **数据设计**：一个分析对应多条答题记录，同题多次回答保存为独立记录，便于对比。
 5. **鉴权隔离**：密码使用 Argon2 哈希，JWT 恢复当前用户，所有查询都带 `user_id` 条件。
 6. **数据库演进**：本地使用 SQLite 快速开发，生产型环境切换 PostgreSQL；
    Alembic 管理表结构，迁移脚本保留旧数据及外键关系。
-7. **工程质量**：模型超时、令牌失效、越权访问、非法 PDF 和关联删除都有测试。
-8. **成本控制**：模型调用前写入用量事件，失败调用也计数，并用 PostgreSQL
+7. **AI 工程**：Prompt 版本随结果保存，并通过固定样本评测结构成功率、回答分差与 RAG Recall@K。
+8. **工程质量**：模型超时、错误脱敏、向量维度、令牌失效、越权访问和关联删除都有测试。
+9. **成本控制**：模型调用前写入用量事件，失败调用也计数，并用 PostgreSQL
    事务锁避免并发绕过全站限额。
 
 ## 演示顺序
@@ -351,10 +443,11 @@ npm run build
 1. 注册一个账号，说明密码哈希、JWT 和首用户旧数据接管。
 2. 首页填入示例，展示真实分析流程。
 3. 进入结果页，说明匹配分析和 8 道题来自固定结构的 AI 输出。
-4. 提交一道回答，展示评分、改进建议和 token/耗时记录。
-5. 打开历史记录，展示数据隔离、多次练习对比及关联删除。
-6. 退出并重新登录，说明前端令牌恢复流程。
-7. 打开 `/docs`，展示 FastAPI 自动生成的接口文档。
+4. 上传一份知识资料，提交回答并展示评分、RAG 引用和相似度。
+5. 展开 AI 运行详情，说明 Prompt 版本、token、耗时及结果可追溯性。
+6. 展示评测报告，解释如何验证强回答分差和 RAG Recall@K。
+7. 打开历史记录，展示数据隔离、多次练习对比及关联删除。
+8. 打开 `/docs` 和 GitHub Actions，展示接口契约与工程质量。
 
 ## 常见问题
 
@@ -371,7 +464,7 @@ npm run build
 说明数据库还没有升级。在 `backend` 目录执行：
 
 ```powershell
-E:\AIwork\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m alembic upgrade head
 ```
 
 ### PostgreSQL 连接失败
@@ -397,4 +490,5 @@ JWT 默认 24 小时过期。前端收到 `401` 后会清除本地令牌并返�
 - 尚未加入邮箱验证、找回密码、刷新令牌和第三方登录。
 - JWT 为方便作品集讲解保存在 `localStorage`；生产环境可升级为 HttpOnly Cookie。
 - 不支持扫描版 PDF、OCR、录音和语音识别。
-- 暂不加入 RAG、Docker 和公开部署。
+- 已支持 RAG 和公开部署；当前暂未加入 Docker、邮箱验证、密码找回和语音面试。
+- 评测集规模较小，定位是回归检测与工程验证，不代表通用模型能力排名。

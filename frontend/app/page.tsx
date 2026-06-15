@@ -156,7 +156,9 @@ export default function HomePage() {
             </span>
             {isSubmitting ? <small>免费后端首次唤醒可能需要约一分钟</small> : null}
           </div>
-          <p className="privacy-note">你的 API Key 只保存在后端环境变量中。</p>
+          <p className="privacy-note">
+            简历和职位描述会发送至第三方 AI 服务进行分析，请先移除身份证号、电话、住址等敏感信息。
+          </p>
         </form>
 
         <section className="result-panel" aria-live="polite">

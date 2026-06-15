@@ -77,8 +77,10 @@ async function request<T>(
     }
     const payload = await response.json().catch(() => null);
     const retryAfter = Number(response.headers.get("Retry-After")) || undefined;
+    const detail = payload?.detail;
     throw new ApiError(
-      payload?.detail ?? "请求失败，请稍后重试",
+      (typeof detail === "object" && detail?.message) ||
+        (typeof detail === "string" ? detail : "请求失败，请稍后重试"),
       response.status,
       retryAfter,
     );
