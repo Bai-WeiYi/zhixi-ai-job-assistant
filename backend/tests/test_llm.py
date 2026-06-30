@@ -265,6 +265,48 @@ async def test_adaptive_evaluation_enforces_score_follow_up_rule():
 
 
 @pytest.mark.asyncio
+async def test_adaptive_evaluation_adds_fallback_follow_up_for_low_score():
+    service = LLMService(Settings(deepseek_api_key="test"))
+    payload = json.loads(valid_adaptive_json(59)) | {"follow_up_question": None}
+    service.client.chat.completions = FakeCompletions(
+        [json.dumps(payload, ensure_ascii=False)]
+    )
+
+    result = await service.evaluate_adaptive_answer(
+        "简历" * 30,
+        "职位" * 30,
+        sample_question(),
+        "我做过，但细节暂时说不清楚。",
+        60,
+    )
+
+    assert result.result.feedback.score == 59
+    assert result.result.follow_up_question is not None
+    assert "具体案例" in result.result.follow_up_question.question
+
+
+@pytest.mark.asyncio
+async def test_adaptive_evaluation_drops_follow_up_for_passing_score():
+    service = LLMService(Settings(deepseek_api_key="test"))
+    payload = json.loads(valid_adaptive_json(59))
+    payload["feedback"]["score"] = 80
+    service.client.chat.completions = FakeCompletions(
+        [json.dumps(payload, ensure_ascii=False)]
+    )
+
+    result = await service.evaluate_adaptive_answer(
+        "简历" * 30,
+        "职位" * 30,
+        sample_question(),
+        "我说明了背景、行动、结果和复盘。",
+        60,
+    )
+
+    assert result.result.feedback.score == 80
+    assert result.result.follow_up_question is None
+
+
+@pytest.mark.asyncio
 async def test_adaptive_report_is_structured():
     service = LLMService(Settings(deepseek_api_key="test"))
     service.client.chat.completions = FakeCompletions([valid_adaptive_report_json()])

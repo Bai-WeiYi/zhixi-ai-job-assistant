@@ -382,8 +382,21 @@ class LLMService:
                     response.choices[0].message.content or ""
                 )
                 needs_follow_up = result.feedback.score < follow_up_threshold
-                if needs_follow_up != (result.follow_up_question is not None):
-                    raise ValueError("follow_up_question does not match score threshold")
+                if not needs_follow_up:
+                    result.follow_up_question = None
+                elif result.follow_up_question is None:
+                    fallback_question = f"请补充一个具体案例，说明你如何处理这个问题：{question.question}"
+                    if len(fallback_question) > 500:
+                        fallback_question = f"{fallback_question[:497]}..."
+                    result.follow_up_question = InterviewQuestion(
+                        question=fallback_question,
+                        purpose="追问当前回答缺少的具体背景、行动、结果和复盘",
+                        answer_points=[
+                            "补充具体情境和任务目标",
+                            "说明你的关键行动和技术取舍",
+                            "给出结果指标、复盘和改进",
+                        ],
+                    )
                 usage = response.usage
                 return LLMAdaptiveEvaluation(
                     result=result,
