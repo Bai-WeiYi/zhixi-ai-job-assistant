@@ -46,6 +46,10 @@ services:
         value: "30"
       - key: GLOBAL_DAILY_INTERVIEW_LIMIT
         value: "100"
+      - key: ADAPTIVE_INTERVIEW_ROUNDS
+        value: "5"
+      - key: ADAPTIVE_INTERVIEW_FOLLOW_UP_THRESHOLD
+        value: "60"
       - key: USER_DAILY_KNOWLEDGE_LIMIT
         value: "5"
       - key: GLOBAL_DAILY_KNOWLEDGE_LIMIT

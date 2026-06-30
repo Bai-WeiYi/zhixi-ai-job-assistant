@@ -51,6 +51,21 @@ class InterviewFeedback(BaseModel):
     suggested_answer_points: list[str] = Field(min_length=2, max_length=8)
 
 
+class AdaptiveInterviewEvaluation(BaseModel):
+    """自适应评分同时给出低分场景使用的追问。"""
+
+    feedback: InterviewFeedback
+    follow_up_question: InterviewQuestion | None = None
+
+
+class AdaptiveInterviewReport(BaseModel):
+    overall_score: int = Field(ge=0, le=100)
+    summary: str = Field(min_length=10, max_length=1500)
+    strengths: list[str] = Field(min_length=1, max_length=8)
+    improvements: list[str] = Field(min_length=1, max_length=8)
+    action_plan: list[str] = Field(min_length=2, max_length=8)
+
+
 class KnowledgeReference(BaseModel):
     document_id: int
     title: str
@@ -80,6 +95,15 @@ class InterviewAttemptCreate(BaseModel):
         return value.strip()
 
 
+class AdaptiveTurnAnswer(BaseModel):
+    answer_text: str = Field(min_length=20, max_length=5000)
+
+    @field_validator("answer_text", mode="before")
+    @classmethod
+    def strip_answer(cls, value: str) -> str:
+        return value.strip()
+
+
 class InterviewAttemptResponse(BaseModel):
     id: int
     analysis_id: int
@@ -95,6 +119,70 @@ class InterviewAttemptResponse(BaseModel):
     total_tokens: int | None = None
     references: list[KnowledgeReference] = Field(default_factory=list)
     created_at: datetime
+
+
+class AdaptiveQuestionResponse(BaseModel):
+    turn_id: int
+    round_number: int
+    source: str
+    source_question_number: int | None = None
+    question: str
+    purpose: str
+    answer_points: list[str]
+
+
+class AdaptiveTurnResponse(BaseModel):
+    id: int
+    round_number: int
+    source: str
+    source_question_number: int | None = None
+    question: str
+    purpose: str
+    answer_text: str | None = None
+    feedback: InterviewFeedback | None = None
+    model_name: str | None = None
+    prompt_version: str | None = None
+    duration_ms: int | None = None
+    total_tokens: int | None = None
+    references: list[KnowledgeReference] = Field(default_factory=list)
+    route_decision: str | None = None
+    created_at: datetime
+    answered_at: datetime | None = None
+
+
+class WorkflowTraceEvent(BaseModel):
+    node: str
+    duration_ms: int = Field(ge=0)
+    detail: str
+
+
+class AdaptiveInterviewSessionResponse(BaseModel):
+    id: int
+    analysis_id: int
+    status: str
+    workflow_version: str
+    max_rounds: int
+    completed_turns: int
+    current_node: str
+    current_question: AdaptiveQuestionResponse | None = None
+    turns: list[AdaptiveTurnResponse] = Field(default_factory=list)
+    report: AdaptiveInterviewReport | None = None
+    execution_path: list[WorkflowTraceEvent] = Field(default_factory=list)
+    total_tokens: int
+    duration_ms: int
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class AdaptiveInterviewSessionListItem(BaseModel):
+    id: int
+    status: str
+    completed_turns: int
+    max_rounds: int
+    overall_score: int | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class AnalysisResponse(BaseModel):

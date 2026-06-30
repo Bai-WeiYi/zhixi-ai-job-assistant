@@ -44,6 +44,37 @@ def valid_feedback_json() -> str:
     )
 
 
+def valid_adaptive_json(score: int = 59) -> str:
+    return json.dumps(
+        {
+            "feedback": json.loads(valid_feedback_json()) | {"score": score},
+            "follow_up_question": (
+                {
+                    "question": "请具体说明一次失败方案以及你最终如何完成技术取舍。",
+                    "purpose": "追问工程判断",
+                    "answer_points": ["失败方案", "选择依据"],
+                }
+                if score < 60
+                else None
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+
+def valid_adaptive_report_json() -> str:
+    return json.dumps(
+        {
+            "overall_score": 78,
+            "summary": "整体表达清晰，能够说明主要技术决策，但工程指标仍需补充。",
+            "strengths": ["技术方向明确"],
+            "improvements": ["量化结果不足"],
+            "action_plan": ["补充性能指标", "练习故障排查案例"],
+        },
+        ensure_ascii=False,
+    )
+
+
 class FakeCompletions:
     def __init__(self, contents):
         self.contents = iter(contents)
@@ -212,3 +243,37 @@ async def test_provider_error_does_not_expose_original_message():
 
     assert raised.value.code == "llm_provider_error"
     assert "secret upstream response" not in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_adaptive_evaluation_enforces_score_follow_up_rule():
+    service = LLMService(Settings(deepseek_api_key="test"))
+    completions = FakeCompletions([valid_adaptive_json(59)])
+    service.client.chat.completions = completions
+
+    result = await service.evaluate_adaptive_answer(
+        "简历" * 30,
+        "职位" * 30,
+        sample_question(),
+        "我说明了技术方向，但还没有补充方案比较和量化结果。",
+        60,
+    )
+
+    assert result.result.feedback.score == 59
+    assert result.result.follow_up_question is not None
+    assert result.prompt_version == "adaptive-evaluation-v1"
+
+
+@pytest.mark.asyncio
+async def test_adaptive_report_is_structured():
+    service = LLMService(Settings(deepseek_api_key="test"))
+    service.client.chat.completions = FakeCompletions([valid_adaptive_report_json()])
+
+    result = await service.generate_adaptive_report(
+        "简历" * 30,
+        "职位" * 30,
+        [{"round": 1, "question": "问题", "answer": "回答", "feedback": {"score": 78}}],
+    )
+
+    assert result.report.overall_score == 78
+    assert result.prompt_version == "adaptive-report-v1"

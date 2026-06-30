@@ -8,6 +8,8 @@ from pydantic import ValidationError
 
 from app.config import Settings
 from app.schemas import (
+    AdaptiveInterviewEvaluation,
+    AdaptiveInterviewReport,
     AnalysisResult,
     InterviewFeedback,
     InterviewQuestion,
@@ -16,6 +18,8 @@ from app.schemas import (
 
 ANALYSIS_PROMPT_VERSION = "analysis-v2"
 INTERVIEW_PROMPT_VERSION = "interview-v3"
+ADAPTIVE_EVALUATION_PROMPT_VERSION = "adaptive-evaluation-v1"
+ADAPTIVE_REPORT_PROMPT_VERSION = "adaptive-report-v1"
 logger = logging.getLogger(__name__)
 
 
@@ -50,6 +54,28 @@ class LLMInterviewEvaluation:
     prompt_version: str = INTERVIEW_PROMPT_VERSION
 
 
+@dataclass
+class LLMAdaptiveEvaluation:
+    result: AdaptiveInterviewEvaluation
+    model_name: str
+    duration_ms: int
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+    prompt_version: str = ADAPTIVE_EVALUATION_PROMPT_VERSION
+
+
+@dataclass
+class LLMAdaptiveReport:
+    report: AdaptiveInterviewReport
+    model_name: str
+    duration_ms: int
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+    prompt_version: str = ADAPTIVE_REPORT_PROMPT_VERSION
+
+
 SYSTEM_PROMPT = """你是一名严谨的中文技术招聘顾问。
 请根据候选人简历和职位描述，给出客观、可追溯的匹配分析。
 不要虚构简历中不存在的经历。只返回 JSON，不要使用 Markdown 代码块。
@@ -78,6 +104,41 @@ strengths 必须包含至少一项。即使回答很弱，也要指出一项真�
   "strengths": ["回答优点"],
   "improvements": ["不足与改进建议"],
   "suggested_answer_points": ["更好的回答要点1", "更好的回答要点2"]
+}"""
+
+ADAPTIVE_EVALUATION_PROMPT = """你是一名严格、真实且有建设性的中文技术面试官。
+请评价候选人的当前回答，并决定是否准备一个针对薄弱点的追问。
+不要因为篇幅长而提高分数，不要虚构回答、简历或参考资料中不存在的内容。
+strengths 至少包含一项真实且有限的优点。
+当 score 低于追问阈值时，follow_up_question 必须是针对本次回答不足的具体追问；
+当 score 达到阈值时，follow_up_question 必须为 null。
+只返回 JSON，不要使用 Markdown 代码块。
+返回结构：
+{
+  "feedback": {
+    "score": 0到100的整数,
+    "summary": "总体评价",
+    "strengths": ["回答优点"],
+    "improvements": ["不足与改进建议"],
+    "suggested_answer_points": ["更好的回答要点1", "更好的回答要点2"]
+  },
+  "follow_up_question": {
+    "question": "针对薄弱点的追问",
+    "purpose": "追问目的",
+    "answer_points": ["回答要点1", "回答要点2"]
+  }
+}"""
+
+ADAPTIVE_REPORT_PROMPT = """你是一名严谨的中文技术面试官。
+请根据整场模拟面试的逐轮问题、回答和评分，生成客观、可执行的总结报告。
+不得虚构候选人没有表达过的能力或经历。只返回 JSON，不要使用 Markdown 代码块。
+返回结构：
+{
+  "overall_score": 0到100的整数,
+  "summary": "整场表现总结",
+  "strengths": ["稳定体现的优势"],
+  "improvements": ["主要薄弱点"],
+  "action_plan": ["具体改进行动1", "具体改进行动2"]
 }"""
 
 
@@ -252,4 +313,164 @@ class LLMService:
         raise LLMServiceError(
             "llm_invalid_output",
             "AI 服务连续返回了无效评分结果，请稍后重试",
+        ) from last_error
+
+    async def evaluate_adaptive_answer(
+        self,
+        resume_text: str,
+        job_description: str,
+        question: InterviewQuestion,
+        answer_text: str,
+        follow_up_threshold: int,
+        references: list[KnowledgeReference] | None = None,
+    ) -> LLMAdaptiveEvaluation:
+        """评分并在低分时一次性生成追问，避免额外模型调用。"""
+        if not self.settings.deepseek_api_key:
+            raise LLMServiceError(
+                "llm_not_configured",
+                "AI 服务尚未配置，请联系管理员",
+            )
+
+        reference_context = ""
+        if references:
+            formatted = "\n\n".join(
+                f"资料《{item.title}》（相关度 {item.similarity:.2f}）：\n{item.content}"
+                for item in references
+            )
+            reference_context = (
+                "\n\n以下是从用户知识库检索到的参考资料。"
+                "请优先依据资料评价，不得虚构资料中不存在的要求：\n"
+                f"{formatted}"
+            )
+
+        user_prompt = (
+            f"追问阈值：{follow_up_threshold} 分\n\n"
+            f"候选人简历：\n{resume_text}\n\n"
+            f"目标岗位：\n{job_description}\n\n"
+            f"当前问题：{question.question}\n"
+            f"考察目的：{question.purpose}\n"
+            f"参考要点：{'；'.join(question.answer_points)}\n\n"
+            f"候选人回答：\n{answer_text}"
+            f"{reference_context}"
+        )
+        started_at = time.perf_counter()
+        last_error: Exception | None = None
+
+        for attempt in range(2):
+            messages = [
+                {"role": "system", "content": ADAPTIVE_EVALUATION_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ]
+            if attempt == 1:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "上一次结果未通过结构或追问规则校验。"
+                            "请严格按指定 JSON 结构完整输出，并确保低分有追问、高分无追问。"
+                        ),
+                    }
+                )
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.settings.llm_model,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    temperature=0.2,
+                )
+                result = AdaptiveInterviewEvaluation.model_validate_json(
+                    response.choices[0].message.content or ""
+                )
+                needs_follow_up = result.feedback.score < follow_up_threshold
+                if needs_follow_up != (result.follow_up_question is not None):
+                    raise ValueError("follow_up_question does not match score threshold")
+                usage = response.usage
+                return LLMAdaptiveEvaluation(
+                    result=result,
+                    model_name=response.model or self.settings.llm_model,
+                    duration_ms=round((time.perf_counter() - started_at) * 1000),
+                    prompt_tokens=getattr(usage, "prompt_tokens", None),
+                    completion_tokens=getattr(usage, "completion_tokens", None),
+                    total_tokens=getattr(usage, "total_tokens", None),
+                )
+            except (json.JSONDecodeError, ValidationError, ValueError, IndexError) as exc:
+                last_error = exc
+            except APITimeoutError as exc:
+                raise LLMServiceError("llm_timeout", "AI 服务响应超时，请稍后重试") from exc
+            except APIConnectionError as exc:
+                raise LLMServiceError("llm_unavailable", "AI 服务暂时不可用，请稍后重试") from exc
+            except Exception as exc:
+                logger.exception("Unexpected adaptive interview evaluation failure")
+                raise LLMServiceError("llm_provider_error", "AI 服务调用失败，请稍后重试") from exc
+
+        raise LLMServiceError(
+            "llm_invalid_output",
+            "AI 服务连续返回了无效的自适应评分结果，请稍后重试",
+        ) from last_error
+
+    async def generate_adaptive_report(
+        self,
+        resume_text: str,
+        job_description: str,
+        turn_summaries: list[dict[str, object]],
+    ) -> LLMAdaptiveReport:
+        """根据已持久化的五轮结果生成整场面试报告。"""
+        if not self.settings.deepseek_api_key:
+            raise LLMServiceError(
+                "llm_not_configured",
+                "AI 服务尚未配置，请联系管理员",
+            )
+
+        user_prompt = (
+            f"候选人简历：\n{resume_text}\n\n"
+            f"目标岗位：\n{job_description}\n\n"
+            "面试记录：\n"
+            f"{json.dumps(turn_summaries, ensure_ascii=False)}"
+        )
+        started_at = time.perf_counter()
+        last_error: Exception | None = None
+        for attempt in range(2):
+            messages = [
+                {"role": "system", "content": ADAPTIVE_REPORT_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ]
+            if attempt == 1:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "上一次结果未通过结构校验，请严格按指定 JSON 结构重新输出。",
+                    }
+                )
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.settings.llm_model,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    temperature=0.2,
+                )
+                report = AdaptiveInterviewReport.model_validate_json(
+                    response.choices[0].message.content or ""
+                )
+                usage = response.usage
+                return LLMAdaptiveReport(
+                    report=report,
+                    model_name=response.model or self.settings.llm_model,
+                    duration_ms=round((time.perf_counter() - started_at) * 1000),
+                    prompt_tokens=getattr(usage, "prompt_tokens", None),
+                    completion_tokens=getattr(usage, "completion_tokens", None),
+                    total_tokens=getattr(usage, "total_tokens", None),
+                )
+            except (json.JSONDecodeError, ValidationError, IndexError) as exc:
+                last_error = exc
+            except APITimeoutError as exc:
+                raise LLMServiceError("llm_timeout", "AI 服务响应超时，请稍后重试") from exc
+            except APIConnectionError as exc:
+                raise LLMServiceError("llm_unavailable", "AI 服务暂时不可用，请稍后重试") from exc
+            except Exception as exc:
+                logger.exception("Unexpected adaptive interview report failure")
+                raise LLMServiceError("llm_provider_error", "AI 服务调用失败，请稍后重试") from exc
+
+        raise LLMServiceError(
+            "llm_invalid_output",
+            "AI 服务连续返回了无效的面试报告，请稍后重试",
         ) from last_error

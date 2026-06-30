@@ -25,6 +25,8 @@ def test_migration_creates_empty_database(tmp_path, monkeypatch):
         "analyses",
         "interview_attempts",
         "ai_usage_events",
+        "adaptive_interview_sessions",
+        "adaptive_interview_turns",
         "alembic_version",
     } <= set(inspector.get_table_names())
     assert "user_id" in {

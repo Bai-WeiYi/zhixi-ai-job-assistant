@@ -57,6 +57,78 @@ export type InterviewAttempt = {
   created_at: string;
 };
 
+export type AdaptiveQuestion = {
+  turn_id: number;
+  round_number: number;
+  source: "main" | "follow_up";
+  source_question_number: number | null;
+  question: string;
+  purpose: string;
+  answer_points: string[];
+};
+
+export type AdaptiveTurn = {
+  id: number;
+  round_number: number;
+  source: "main" | "follow_up";
+  source_question_number: number | null;
+  question: string;
+  purpose: string;
+  answer_text: string | null;
+  feedback: InterviewFeedback | null;
+  model_name: string | null;
+  prompt_version: string | null;
+  duration_ms: number | null;
+  total_tokens: number | null;
+  references: KnowledgeReference[];
+  route_decision: "follow_up" | "next_main" | "finish" | null;
+  created_at: string;
+  answered_at: string | null;
+};
+
+export type AdaptiveInterviewReport = {
+  overall_score: number;
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  action_plan: string[];
+};
+
+export type WorkflowTraceEvent = {
+  node: string;
+  duration_ms: number;
+  detail: string;
+};
+
+export type AdaptiveInterviewSession = {
+  id: number;
+  analysis_id: number;
+  status: "processing" | "awaiting_answer" | "completed";
+  workflow_version: string;
+  max_rounds: number;
+  completed_turns: number;
+  current_node: string;
+  current_question: AdaptiveQuestion | null;
+  turns: AdaptiveTurn[];
+  report: AdaptiveInterviewReport | null;
+  execution_path: WorkflowTraceEvent[];
+  total_tokens: number;
+  duration_ms: number;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+
+export type AdaptiveInterviewSessionListItem = {
+  id: number;
+  status: AdaptiveInterviewSession["status"];
+  completed_turns: number;
+  max_rounds: number;
+  overall_score: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AnalysisListItem = {
   id: number;
   match_score: number;

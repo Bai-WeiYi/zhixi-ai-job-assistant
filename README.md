@@ -20,6 +20,7 @@ Render 免费实例闲置后会休眠，首次打开可能需要约一分钟唤�
 - 使用 Alembic 管理数据库版本，同时支持 SQLite 和 PostgreSQL。
 - 提供 SQLite 到 PostgreSQL 的数据迁移脚本，保留用户、分析和答题关系。
 - 同一道题支持重复练习，平均分只采用每道题的最新成绩。
+- 使用 LangGraph 构建 5 轮自适应面试：低分触发针对性追问，高分切换主题，并通过 checkpoint 支持刷新恢复。
 - 支持粘贴简历文本或提取带文本层的 PDF，不依赖 OCR。
 - 提供完整加载、空状态、错误重试、删除确认和移动端适配。
 - 提供不调用 DeepSeek 的演示数据，现场网络异常时仍能展示完整产品。
@@ -36,7 +37,7 @@ Render 免费实例闲置后会休眠，首次打开可能需要约一分钟唤�
 | 层级 | 技术 |
 |---|---|
 | 后端 | Python、FastAPI、Pydantic |
-| AI | DeepSeek API、硅基流动 BGE-M3 Embedding、RAG |
+| AI | DeepSeek API、LangGraph、硅基流动 BGE-M3 Embedding、RAG |
 | 数据库 | SQLAlchemy、SQLite、PostgreSQL、Alembic |
 | 鉴权 | JWT、Argon2、Bearer Token |
 | 前端 | Next.js 15、React 19、TypeScript |
@@ -51,10 +52,13 @@ flowchart LR
     N -->|JWT + REST| F["FastAPI"]
     F --> A["鉴权与用量控制"]
     F --> L["DeepSeek<br/>结构化分析与评分"]
+    F --> LG["LangGraph<br/>状态、条件路由、Checkpoint"]
     F --> E["BGE-M3 Embedding"]
     F --> D[("SQLite / PostgreSQL")]
     E --> V[("pgvector / Python 余弦检索")]
     V --> F
+    LG --> D
+    LG --> L
     F -->|结果、Prompt 版本、耗时、Token、引用| N
     G["GitHub Actions"] -->|测试 / 类型检查 / 构建 / 密钥扫描| N
     G --> F
@@ -225,6 +229,26 @@ React 从 localStorage 读取 JWT
 → React 更新最新分数和历次成绩
 ```
 
+### LangGraph 自适应面试
+
+```mermaid
+flowchart LR
+    S["选择固定主问题"] --> I["interrupt 等待用户回答"]
+    I --> R["RAG 检索"]
+    R --> E["DeepSeek 评分并准备追问"]
+    E --> C{"条件路由"}
+    C -->|"低于 60 分且未追问"| F["针对薄弱点追问"]
+    C -->|"达到 60 分或追问已用"| N["下一道主问题"]
+    C -->|"完成 5 轮"| P["生成综合报告"]
+    F --> I
+    N --> I
+```
+
+每次回答都是一个可恢复的图执行：SQLite 本地保存独立 checkpoint，生产环境使用
+Neon PostgreSQL。业务会话、问题、回答和评分仍由 SQLAlchemy/Alembic 管理；checkpoint
+只保存流程状态。相同回答重复提交会幂等返回，模型超时后可从失败节点继续，不会丢失
+已经恢复到图中的回答。
+
 ### RAG 知识库与评分
 
 ```text
@@ -263,6 +287,10 @@ Neon 支持 `pgvector` 时使用数据库余弦检索；本地 PostgreSQL 未安
 | `GET` | `/api/analyses/{id}` | 查询分析详情 |
 | `DELETE` | `/api/analyses/{id}` | 删除分析及关联练习 |
 | `POST` | `/api/analyses/{id}/questions/{number}/attempts` | 提交回答并评分 |
+| `POST` | `/api/analyses/{id}/adaptive-interviews` | 开始一场 5 轮自适应面试 |
+| `GET` | `/api/analyses/{id}/adaptive-interviews` | 查询该分析的自适应面试 |
+| `GET` | `/api/adaptive-interviews/{id}` | 恢复会话、轮次和工作流轨迹 |
+| `PATCH` | `/api/adaptive-interviews/{id}/turns/{turn_id}` | 提交当前轮回答并推进状态图 |
 | `GET` | `/api/analyses/{id}/interview-attempts` | 查询练习记录 |
 
 除健康检查、注册和登录外，其他接口都需要：
@@ -393,6 +421,8 @@ cd backend
 - **双数据库策略**：SQLite 降低本地开发门槛，PostgreSQL + pgvector 承载线上检索；
   启动时检查向量维度，避免静默写入不兼容数据。
 - **失败调用也计入额度**：防止公开部署被反复失败请求消耗模型预算。
+- **只在复杂流程使用 LangGraph**：岗位分析、知识上传和标准练习继续使用原生 SDK；
+  只有跨请求暂停、条件追问、循环和恢复并存的自适应面试进入状态图，避免框架化简单逻辑。
 
 ## 测试
 
@@ -420,7 +450,8 @@ GitHub Actions 会对每次推送和 Pull Request 执行后端测试、前端测
 > **职析 · AI 求职面试助手｜AI 全栈项目**
 > 使用 Next.js、FastAPI、PostgreSQL 和 DeepSeek 构建岗位匹配与模拟面试平台；
 > 通过 Pydantic 校验大模型结构化输出并实现有限纠错重试，使用 BGE-M3 与 pgvector
-> 构建带引用快照的个人 RAG 知识库。实现 JWT 数据隔离、Alembic 迁移、模型用量控制、
+> 构建带引用快照的个人 RAG 知识库；基于 LangGraph 实现带条件追问、持久 checkpoint
+> 和中断恢复的 5 轮自适应面试。实现 JWT 数据隔离、Alembic 迁移、模型用量控制、
 > Prompt 版本追踪和固定评测集，并通过 GitHub Actions、Vercel、Render、Neon 完成
 > 自动测试与公开部署。
 
@@ -445,9 +476,10 @@ GitHub Actions 会对每次推送和 Pull Request 执行后端测试、前端测
 3. 进入结果页，说明匹配分析和 8 道题来自固定结构的 AI 输出。
 4. 上传一份知识资料，提交回答并展示评分、RAG 引用和相似度。
 5. 展开 AI 运行详情，说明 Prompt 版本、token、耗时及结果可追溯性。
-6. 展示评测报告，解释如何验证强回答分差和 RAG Recall@K。
-7. 打开历史记录，展示数据隔离、多次练习对比及关联删除。
-8. 打开 `/docs` 和 GitHub Actions，展示接口契约与工程质量。
+6. 切换到 LangGraph 自适应面试，提交弱回答触发追问，刷新页面展示 checkpoint 恢复。
+7. 展开工作流详情，展示节点路径、路由原因、耗时和 token，完成 5 轮后查看综合报告。
+8. 展示评测报告，解释如何验证强回答分差和 RAG Recall@K。
+9. 打开历史记录、`/docs` 和 GitHub Actions，展示数据隔离、接口契约与工程质量。
 
 ## 常见问题
 

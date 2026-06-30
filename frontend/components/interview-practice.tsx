@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, Send } from "lucide-react";
 
+import { AdaptiveInterviewPractice } from "@/components/adaptive-interview-practice";
 import { createInterviewAttempt, getUsage, listInterviewAttempts } from "@/lib/api";
 import type { AnalysisResponse, InterviewAttempt, UsageSummary } from "@/lib/types";
 
@@ -23,7 +24,7 @@ function FeedbackList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-export function InterviewPractice({ analysis }: Props) {
+function StandardInterviewPractice({ analysis }: Props) {
   const [selectedQuestion, setSelectedQuestion] = useState(1);
   const [answerText, setAnswerText] = useState("");
   const [attempts, setAttempts] = useState<InterviewAttempt[]>([]);
@@ -319,5 +320,37 @@ export function InterviewPractice({ analysis }: Props) {
         <div className="practice-empty">这道题还没有练习记录，提交回答后会显示评分。</div>
       )}
     </section>
+  );
+}
+
+export function InterviewPractice({ analysis }: Props) {
+  const [mode, setMode] = useState<"standard" | "adaptive">("standard");
+
+  return (
+    <>
+      <div className="interview-mode-switch" aria-label="选择模拟面试模式">
+        <button
+          className={mode === "standard" ? "active" : ""}
+          onClick={() => setMode("standard")}
+          type="button"
+        >
+          标准练习
+          <span>固定 8 题，可重复作答</span>
+        </button>
+        <button
+          className={mode === "adaptive" ? "active" : ""}
+          onClick={() => setMode("adaptive")}
+          type="button"
+        >
+          LangGraph 自适应面试
+          <span>5 轮动态追问与路径切换</span>
+        </button>
+      </div>
+      {mode === "standard" ? (
+        <StandardInterviewPractice analysis={analysis} />
+      ) : (
+        <AdaptiveInterviewPractice analysis={analysis} />
+      )}
+    </>
   );
 }

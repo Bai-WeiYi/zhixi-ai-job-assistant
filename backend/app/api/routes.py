@@ -20,6 +20,7 @@ from app.api.dependencies import get_current_user
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models import (
+    AdaptiveInterviewSession,
     Analysis,
     InterviewAttempt,
     KnowledgeChunk,
@@ -569,12 +570,20 @@ def list_interview_attempts(
 
 
 @router.delete("/analyses/{analysis_id}", status_code=204)
-def delete_analysis(
+async def delete_analysis(
     analysis_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
     record = get_owned_analysis(db, analysis_id, current_user.id)
+    thread_ids = db.scalars(
+        select(AdaptiveInterviewSession.thread_id).where(
+            AdaptiveInterviewSession.analysis_id == record.id
+        )
+    ).all()
+    for thread_id in thread_ids:
+        await request.app.state.adaptive_interview_checkpointer.adelete_thread(thread_id)
     db.delete(record)
     db.commit()
     return Response(status_code=204)

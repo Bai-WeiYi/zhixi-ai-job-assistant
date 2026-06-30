@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import UserDefinedType
@@ -92,6 +92,10 @@ class Analysis(Base):
         back_populates="analysis",
         cascade="all, delete-orphan",
     )
+    adaptive_interviews: Mapped[list["AdaptiveInterviewSession"]] = relationship(
+        back_populates="analysis",
+        cascade="all, delete-orphan",
+    )
     user: Mapped[User | None] = relationship(back_populates="analyses")
 
 
@@ -122,6 +126,87 @@ class InterviewAttempt(Base):
         default=lambda: datetime.now(timezone.utc),
     )
     analysis: Mapped[Analysis] = relationship(back_populates="interview_attempts")
+
+
+class AdaptiveInterviewSession(Base):
+    """LangGraph 驱动的一场可中断、可恢复的自适应面试。"""
+
+    __tablename__ = "adaptive_interview_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    thread_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="awaiting_answer")
+    workflow_version: Mapped[str] = mapped_column(String(50))
+    max_rounds: Mapped[int] = mapped_column(Integer, default=5)
+    completed_turns: Mapped[int] = mapped_column(Integer, default=0)
+    current_node: Mapped[str] = mapped_column(String(50), default="await_answer")
+    execution_path_json: Mapped[str] = mapped_column(Text, default="[]")
+    report_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    report_model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    report_prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    analysis: Mapped[Analysis] = relationship(back_populates="adaptive_interviews")
+    turns: Mapped[list["AdaptiveInterviewTurn"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="AdaptiveInterviewTurn.round_number",
+    )
+
+
+class AdaptiveInterviewTurn(Base):
+    """保存自适应面试中的问题、回答、评分和路由决策。"""
+
+    __tablename__ = "adaptive_interview_turns"
+    __table_args__ = (
+        UniqueConstraint("session_id", "round_number", name="uq_adaptive_turn_round"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("adaptive_interview_sessions.id"),
+        index=True,
+    )
+    round_number: Mapped[int] = mapped_column(Integer)
+    question_source: Mapped[str] = mapped_column(String(20))
+    source_question_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    question_text: Mapped[str] = mapped_column(Text)
+    purpose: Mapped[str] = mapped_column(Text)
+    answer_points_json: Mapped[str] = mapped_column(Text)
+    answer_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rag_context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    route_decision: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+    answered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    session: Mapped[AdaptiveInterviewSession] = relationship(back_populates="turns")
 
 
 class KnowledgeDocument(Base):

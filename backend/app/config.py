@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     user_daily_interview_limit: int = 10
     global_daily_analysis_limit: int = 30
     global_daily_interview_limit: int = 100
+    adaptive_interview_rounds: int = 5
+    adaptive_interview_follow_up_threshold: int = 60
+    langgraph_sqlite_path: str = "./data/langgraph_checkpoints.db"
     embedding_api_key: str = ""
     embedding_base_url: str = "https://api.siliconflow.cn/v1"
     embedding_model: str = "BAAI/bge-m3"
@@ -66,6 +69,14 @@ class Settings(BaseSettings):
                 "postgresql+psycopg://",
                 1,
             )
+        return self.database_url
+
+    def langgraph_postgres_url(self) -> str:
+        """LangGraph 的 psycopg checkpointer 使用标准 PostgreSQL URL。"""
+        if self.database_url.startswith("postgres://"):
+            return self.database_url.replace("postgres://", "postgresql://", 1)
+        if self.database_url.startswith("postgresql+psycopg://"):
+            return self.database_url.replace("postgresql+psycopg://", "postgresql://", 1)
         return self.database_url
 
     def allowed_frontend_origins(self) -> list[str]:

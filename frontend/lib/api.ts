@@ -1,6 +1,8 @@
 import type {
   AnalysisListItem,
   AnalysisResponse,
+  AdaptiveInterviewSession,
+  AdaptiveInterviewSessionListItem,
   AuthResponse,
   InterviewAttempt,
   KnowledgeDocument,
@@ -155,6 +157,33 @@ export function createInterviewAttempt(
     `/api/analyses/${analysisId}/questions/${questionNumber}/attempts`,
     {
       method: "POST",
+      body: JSON.stringify({ answer_text: answerText }),
+    },
+  );
+}
+
+export function createAdaptiveInterview(analysisId: number) {
+  return request<AdaptiveInterviewSession>(
+    `/api/analyses/${analysisId}/adaptive-interviews`,
+    { method: "POST" },
+  );
+}
+
+export function listAdaptiveInterviews(analysisId: number) {
+  return request<AdaptiveInterviewSessionListItem[]>(
+    `/api/analyses/${analysisId}/adaptive-interviews`,
+  );
+}
+
+export function getAdaptiveInterview(sessionId: number) {
+  return request<AdaptiveInterviewSession>(`/api/adaptive-interviews/${sessionId}`);
+}
+
+export function answerAdaptiveTurn(sessionId: number, turnId: number, answerText: string) {
+  return request<AdaptiveInterviewSession>(
+    `/api/adaptive-interviews/${sessionId}/turns/${turnId}`,
+    {
+      method: "PATCH",
       body: JSON.stringify({ answer_text: answerText }),
     },
   );
